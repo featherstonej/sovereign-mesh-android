@@ -8,6 +8,9 @@ composeBom = "2024.09.00"
 protobuf = "3.25.1"
 protobufGradle = "0.9.4"
 osmdroid = "6.1.18"
+junit = "4.13.2"
+sqlcipher = "4.5.5"
+sqlite = "2.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -21,6 +24,10 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobuf" }
 osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+mockito-core = { group = "org.mockito", name = "mockito-core", version = "5.11.0" }
+sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
+androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "sqlite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

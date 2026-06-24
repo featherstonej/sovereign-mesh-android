@@ -68,4 +68,9 @@ dependencies {
 
     implementation(libs.protobuf.javalite)
     implementation(libs.osmdroid.android)
+    implementation(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite)
+    
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
 }

@@ -1,49 +1,99 @@
 package com.sovereignmesh.android
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.sovereignmesh.android.database.MeshDatabaseHelper
+import com.sovereignmesh.android.hardware.MeshHardwareService
+import com.sovereignmesh.android.ui.DashboardScreen
+import com.sovereignmesh.android.ui.MapScreen
+import com.sovereignmesh.android.ui.SovereignViewModel
+import com.sovereignmesh.android.ui.theme.CryptoGreen
+import com.sovereignmesh.android.ui.theme.CryptoTeal
+import com.sovereignmesh.android.ui.theme.SovereignTheme
+import com.sovereignmesh.android.ui.theme.StealthBackground
+import com.sovereignmesh.android.ui.theme.StealthSurface
 
 class MainActivity : ComponentActivity() {
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        // Handle runtime hardware permission responses
+    private lateinit var databaseHelper: MeshDatabaseHelper
+    private lateinit var viewModel: SovereignViewModel
+    private var isBound = false
+    private var hardwareService: MeshHardwareService? = null
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as MeshHardwareService.LocalBinder
+            val boundService = binder.getService()
+            hardwareService = boundService
+            isBound = true
+            viewModel.setService(boundService)
+            Log.d("MainActivity", "Successfully bound to MeshHardwareService")
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            hardwareService = null
+            isBound = false
+            Log.w("MainActivity", "Disconnected from MeshHardwareService")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+        Log.d("MainActivity", "onCreate called")
+
+        // 1. Initialize encrypted database and view model
+        databaseHelper = MeshDatabaseHelper(this)
+        viewModel = SovereignViewModel(this, databaseHelper)
+
+        // 2. Start and bind to the foreground hardware service
+        val intent = Intent(this, MeshHardwareService::class.java)
+        startService(intent)
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+
+        // 3. Request location and bluetooth permissions
         checkAndRequestHardwarePermissions()
 
         setContent {
-            MaterialTheme {
+            SovereignTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SovereignDashboard()
+                    MainAppLayout(viewModel)
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+        databaseHelper.close()
+        super.onDestroy()
     }
 
     private fun checkAndRequestHardwarePermissions() {
@@ -62,30 +112,83 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
         if (permissionsToRequest.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+            requestPermissions(permissionsToRequest.toTypedArray(), 100)
         }
     }
 }
 
 @Composable
-fun SovereignDashboard() {
+fun MainAppLayout(viewModel: SovereignViewModel) {
+    var activeTab by remember { mutableIntStateOf(0) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(StealthBackground)
     ) {
-        Text(
-            text = "Sovereign Mesh",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Privacy-First / Off-Grid Communications",
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(top = 8.dp)
-        )
+        // High-contrast tactical header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(StealthSurface)
+                .padding(vertical = 14.dp, horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "🛡️ SOVEREIGN MESH CLIENT",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = CryptoGreen,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = "SECURE / OFF-GRID",
+                fontSize = 11.sp,
+                color = CryptoTeal,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+
+        // Active tab rendering
+        Box(modifier = Modifier.weight(1f)) {
+            when (activeTab) {
+                0 -> DashboardScreen(viewModel = viewModel)
+                1 -> MapScreen(viewModel = viewModel)
+            }
+        }
+
+        // Bottom Tab Selector Row
+        TabRow(
+            selectedTabIndex = activeTab,
+            containerColor = StealthSurface,
+            contentColor = CryptoGreen,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                    color = CryptoGreen
+                )
+            }
+        ) {
+            Tab(
+                selected = activeTab == 0,
+                onClick = { activeTab = 0 },
+                text = { Text("DASHBOARD", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
+            )
+            Tab(
+                selected = activeTab == 1,
+                onClick = { activeTab = 1 },
+                text = { Text("TACTICAL MAP", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
+            )
+        }
     }
 }
