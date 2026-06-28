@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android
 
 import android.Manifest
@@ -35,6 +53,12 @@ import com.sovereignmesh.android.ui.theme.SovereignTheme
 import com.sovereignmesh.android.ui.theme.StealthBackground
 import com.sovereignmesh.android.ui.theme.StealthSurface
 
+/**
+ * MainActivity is the primary entry point for the Sovereign Mesh application.
+ *
+ * It manages the lifecycle of the [MeshHardwareService] connection, handles
+ * hardware permissions, and hosts the main Jetpack Compose UI layout.
+ */
 class MainActivity : ComponentActivity() {
 
     private lateinit var databaseHelper: MeshDatabaseHelper
@@ -49,20 +73,20 @@ class MainActivity : ComponentActivity() {
             hardwareService = boundService
             isBound = true
             viewModel.setService(boundService)
-            Log.d("MainActivity", "Successfully bound to MeshHardwareService")
+            Log.d(TAG, "Successfully bound to MeshHardwareService")
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             hardwareService = null
             isBound = false
-            Log.w("MainActivity", "Disconnected from MeshHardwareService")
+            Log.w(TAG, "Disconnected from MeshHardwareService")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        Log.d("MainActivity", "onCreate called")
+        Log.d(TAG, "onCreate called")
 
         // 1. Initialize encrypted database and view model
         databaseHelper = MeshDatabaseHelper(this)
@@ -97,6 +121,10 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /**
+     * Verifies and requests necessary permissions for BLE scanning, device connectivity,
+     * and local tactical mapping.
+     */
     private fun checkAndRequestHardwarePermissions() {
         val permissionsToRequest = mutableListOf<String>()
         
@@ -124,11 +152,20 @@ class MainActivity : ComponentActivity() {
         }
 
         if (permissionsToRequest.isNotEmpty()) {
-            requestPermissions(permissionsToRequest.toTypedArray(), 100)
+            requestPermissions(permissionsToRequest.toTypedArray(), PERMISSION_REQUEST_CODE)
         }
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val PERMISSION_REQUEST_CODE = 100
     }
 }
 
+/**
+ * The main high-level layout of the application, featuring a tactical header,
+ * the active screen content, and a bottom navigation bar.
+ */
 @Composable
 fun MainAppLayout(viewModel: SovereignViewModel) {
     var activeTab by remember { mutableIntStateOf(0) }

@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.ui
 
 import android.content.Context
@@ -35,6 +53,12 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import java.util.Locale
 
+/**
+ * MapScreen provides a privacy-first tactical mapping interface.
+ *
+ * It enforces offline operation by blocking data connections in OSMDroid and
+ * leverages local signal logs to visualize node health and location.
+ */
 @Composable
 fun MapScreen(
     viewModel: SovereignViewModel,

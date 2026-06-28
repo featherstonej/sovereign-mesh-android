@@ -1,30 +1,66 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.util.stego
 
 import android.graphics.Bitmap
+import android.util.Log
 import java.nio.ByteBuffer
 
+/**
+ * StegoEngine provides tactical Least Significant Bit (LSB) steganography
+ * for embedding and extracting secret payloads within standard Bitmap images.
+ *
+ * This allows for out-of-band communication and data backups that are
+ * visually indistinguishable from normal images.
+ */
 object StegoEngine {
+
+    private const val TAG = "StegoEngine"
 
     /**
      * Embeds a byte array payload into the Least Significant Bits (LSB) of a copy of the source Bitmap.
-     * Returns the stego-bitmap, or null if the payload is too large for the image.
+     * @param source The carrier Bitmap image.
+     * @param payload The raw byte array to hide.
+     * @return A new stego-bitmap containing the hidden payload, or null if it cannot be embedded.
      */
     fun hidePayload(source: Bitmap, payload: ByteArray): Bitmap? {
         val width = source.width
         val height = source.height
         
         // Prepare full payload = [ Length (4 bytes, Big Endian) | Payload bytes ]
-        val fullPayload = ByteBuffer.allocate(4 + payload.size)
-            .putInt(payload.size)
-            .put(payload)
-            .array()
+        val fullPayload = try {
+            ByteBuffer.allocate(4 + payload.size)
+                .putInt(payload.size)
+                .put(payload)
+                .array()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to allocate payload buffer", e)
+            return null
+        }
 
         val totalBitsRequired = fullPayload.size * 8
         // Each pixel has 3 channels (Red, Green, Blue) to hide 1 bit per channel
         val totalBitsCapacity = width * height * 3
 
         if (totalBitsRequired > totalBitsCapacity) {
-            return null // Bitmap is too small to carry this payload
+            Log.w(TAG, "Payload too large for carrier image ($totalBitsRequired > $totalBitsCapacity bits)")
+            return null
         }
 
         // Create mutable copy of source bitmap
@@ -72,7 +108,8 @@ object StegoEngine {
 
     /**
      * Extracts an embedded byte array payload from the stego-bitmap.
-     * Returns the payload, or null if no valid payload is detected or if extraction fails.
+     * @param stegoBitmap The image containing a potential hidden payload.
+     * @return The extracted payload, or null if extraction fails or no valid payload is detected.
      */
     fun extractPayload(stegoBitmap: Bitmap): ByteArray? {
         val width = stegoBitmap.width

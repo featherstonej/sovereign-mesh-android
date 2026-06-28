@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.hardware.usb
 
 import android.hardware.usb.UsbConstants
@@ -15,6 +33,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * Driver implementation for Communication Device Class (CDC) Abstract Control Model (ACM)
+ * USB serial peripherals. This is the standard driver for many modern ESP32 and Arduino boards.
+ */
 class CdcAcmDriver(
     private val usbManager: UsbManager,
     private val device: UsbDevice
@@ -35,13 +57,19 @@ class CdcAcmDriver(
     private var ioJob: Job? = null
     private val driverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    companion object {
+        private const val TAG = "CdcAcmDriver"
+        private const val TIMEOUT_MS = 1000
+        private const val CONTROL_TIMEOUT_MS = 5000
+    }
+
     override fun connect(): Boolean {
         if (_connectionState.value == UsbConnectionState.CONNECTED) return true
         _connectionState.value = UsbConnectionState.CONNECTING
 
         try {
             val conn = usbManager.openDevice(device) ?: run {
-                Log.e("CdcAcmDriver", "Failed to open device connection")
+                Log.e(TAG, "Failed to open device connection")
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
             }
@@ -72,7 +100,7 @@ class CdcAcmDriver(
             }
 
             if (dataIntf == null) {
-                Log.e("CdcAcmDriver", "No suitable data interface found")
+                Log.e(TAG, "No suitable data interface found")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -94,7 +122,7 @@ class CdcAcmDriver(
             }
 
             if (endpointIn == null || endpointOut == null) {
-                Log.e("CdcAcmDriver", "Required bulk endpoints not found")
+                Log.e(TAG, "Required bulk endpoints not found")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -103,11 +131,11 @@ class CdcAcmDriver(
             // Claim interfaces
             if (ctrlIntf != null) {
                 if (!conn.claimInterface(ctrlIntf, true)) {
-                    Log.w("CdcAcmDriver", "Failed to claim control interface")
+                    Log.w(TAG, "Failed to claim control interface")
                 }
             }
             if (!conn.claimInterface(dataIntf, true)) {
-                Log.e("CdcAcmDriver", "Failed to claim data interface")
+                Log.e(TAG, "Failed to claim data interface")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -122,16 +150,16 @@ class CdcAcmDriver(
                 0x08.toByte()                    // 8 data bits
             )
             val ctrlId = ctrlIntf?.id ?: 0
-            conn.controlTransfer(0x21, 0x20, 0, ctrlId, lineCoding, lineCoding.size, 5000)
+            conn.controlTransfer(0x21, 0x20, 0, ctrlId, lineCoding, lineCoding.size, CONTROL_TIMEOUT_MS)
 
             // SET_CONTROL_LINE_STATE (DTR | RTS)
-            conn.controlTransfer(0x21, 0x22, 0x03, ctrlId, null, 0, 5000)
+            conn.controlTransfer(0x21, 0x22, 0x03, ctrlId, null, 0, CONTROL_TIMEOUT_MS)
 
             _connectionState.value = UsbConnectionState.CONNECTED
             startIoLoop()
             return true
         } catch (e: Exception) {
-            Log.e("CdcAcmDriver", "Connection error", e)
+            Log.e(TAG, "Connection error", e)
             cleanup()
             _connectionState.value = UsbConnectionState.ERROR
             return false
@@ -171,7 +199,7 @@ class CdcAcmDriver(
                 controlInterface?.let { releaseInterface(it) }
                 close()
             } catch (e: Exception) {
-                Log.w("CdcAcmDriver", "Error during interface release and close", e)
+                Log.w(TAG, "Error during interface release and close", e)
             }
         }
         connection = null
@@ -186,6 +214,6 @@ class CdcAcmDriver(
         val epOut = endpointOut ?: return -1
         if (_connectionState.value != UsbConnectionState.CONNECTED) return -1
         
-        return conn.bulkTransfer(epOut, data, data.size, 1000)
+        return conn.bulkTransfer(epOut, data, data.size, TIMEOUT_MS)
     }
 }

@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.hardware.usb
 
 import android.app.PendingIntent
@@ -9,17 +27,24 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
 
+/**
+ * UsbSerialManager handles the discovery, permission requests, and driver
+ * resolution for USB-OTG serial peripherals.
+ */
 class UsbSerialManager(private val context: Context) {
 
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
 
     companion object {
+        /** Intent action triggered when the user responds to a USB permission request. */
         const val ACTION_USB_PERMISSION = "com.sovereignmesh.android.USB_PERMISSION"
         
         // Chipset VIDs
         private const val VID_SILABS = 0x10C4  // CP210x
         private const val VID_WCH = 0x1A86     // CH340 / CH341
         private const val VID_FTDI = 0x0403    // FTDI
+        
+        private const val TAG = "UsbSerialManager"
     }
 
     /**
@@ -30,10 +55,7 @@ class UsbSerialManager(private val context: Context) {
         val compatibleDevices = mutableListOf<UsbDevice>()
 
         for (device in deviceList.values) {
-            val vid = device.vendorId
-            val deviceClass = device.deviceClass
-
-            Log.d("UsbSerialManager", "Found device: VID=0x${Integer.toHexString(vid)}, PID=0x${Integer.toHexString(device.productId)}, Class=$deviceClass")
+            Log.d(TAG, "Found device: VID=0x${Integer.toHexString(device.vendorId)}, PID=0x${Integer.toHexString(device.productId)}, Class=${device.deviceClass}")
 
             if (isSupportedDevice(device)) {
                 compatibleDevices.add(device)
@@ -98,25 +120,26 @@ class UsbSerialManager(private val context: Context) {
     }
 
     /**
-     * Resolves the appropriate UsbSerialDriver instance based on Vendor ID and features.
+     * Resolves the appropriate [UsbSerialDriver] instance based on Vendor ID and features.
+     * @return A specific driver implementation, or null if no compatible driver is found or permission is missing.
      */
     fun getDriverForDevice(device: UsbDevice): UsbSerialDriver? {
         if (!hasPermission(device)) {
-            Log.e("UsbSerialManager", "No permission to create driver for device: ${device.deviceName}")
+            Log.e(TAG, "No permission to create driver for device: ${device.deviceName}")
             return null
         }
 
         return when (device.vendorId) {
             VID_SILABS -> {
-                Log.d("UsbSerialManager", "Instantiating CP210x Driver")
+                Log.d(TAG, "Instantiating CP210x Driver")
                 Cp210xDriver(usbManager, device)
             }
             VID_WCH -> {
-                Log.d("UsbSerialManager", "Instantiating CH34x Driver")
+                Log.d(TAG, "Instantiating CH34x Driver")
                 Ch34xDriver(usbManager, device)
             }
             else -> {
-                Log.d("UsbSerialManager", "Fallback: Instantiating CDC-ACM Driver")
+                Log.d(TAG, "Fallback: Instantiating CDC-ACM Driver")
                 CdcAcmDriver(usbManager, device)
             }
         }

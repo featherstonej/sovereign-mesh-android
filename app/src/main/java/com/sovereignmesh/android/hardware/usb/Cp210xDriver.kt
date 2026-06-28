@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.hardware.usb
 
 import android.hardware.usb.UsbConstants
@@ -15,6 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * Driver implementation for Silicon Labs CP210x USB-to-Serial bridge chipsets.
+ */
 class Cp210xDriver(
     private val usbManager: UsbManager,
     private val device: UsbDevice
@@ -34,11 +55,17 @@ class Cp210xDriver(
     private var ioJob: Job? = null
     private val driverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // CP210x Requests
-    private val REQ_IFC_ENABLE = 0x00
-    private val REQ_SET_LINE_CTL = 0x03
-    private val REQ_SET_MHS = 0x07
-    private val REQ_SET_BAUDRATE = 0x1E
+    companion object {
+        private const val TAG = "Cp210xDriver"
+        private const val TIMEOUT_MS = 1000
+        private const val CONTROL_TIMEOUT_MS = 5000
+
+        // CP210x Vendor Requests
+        private const val REQ_IFC_ENABLE = 0x00
+        private const val REQ_SET_LINE_CTL = 0x03
+        private const val REQ_SET_MHS = 0x07
+        private const val REQ_SET_BAUDRATE = 0x1E
+    }
 
     override fun connect(): Boolean {
         if (_connectionState.value == UsbConnectionState.CONNECTED) return true
@@ -46,7 +73,7 @@ class Cp210xDriver(
 
         try {
             val conn = usbManager.openDevice(device) ?: run {
-                Log.e("Cp210xDriver", "Failed to open device connection")
+                Log.e(TAG, "Failed to open device connection")
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
             }
@@ -54,7 +81,7 @@ class Cp210xDriver(
 
             // CP210x typically has a single interface
             if (device.interfaceCount == 0) {
-                Log.e("Cp210xDriver", "Device has no interfaces")
+                Log.e(TAG, "Device has no interfaces")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -75,14 +102,14 @@ class Cp210xDriver(
             }
 
             if (endpointIn == null || endpointOut == null) {
-                Log.e("Cp210xDriver", "Required bulk endpoints not found")
+                Log.e(TAG, "Required bulk endpoints not found")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
             }
 
             if (!conn.claimInterface(intf, true)) {
-                Log.e("Cp210xDriver", "Failed to claim interface")
+                Log.e(TAG, "Failed to claim interface")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -92,25 +119,25 @@ class Cp210xDriver(
             val reqType = 0x41
 
             // 1. Enable UART
-            conn.controlTransfer(reqType, REQ_IFC_ENABLE, 1, intf.id, null, 0, 5000)
+            conn.controlTransfer(reqType, REQ_IFC_ENABLE, 1, intf.id, null, 0, CONTROL_TIMEOUT_MS)
 
             // 2. Set Baud Rate (115200)
             val baudData = byteArrayOf(
                 0x00.toByte(), 0xC2.toByte(), 0x01.toByte(), 0x00.toByte() // 115200 in little endian hex (0x0001C200)
             )
-            conn.controlTransfer(reqType, REQ_SET_BAUDRATE, 0, intf.id, baudData, baudData.size, 5000)
+            conn.controlTransfer(reqType, REQ_SET_BAUDRATE, 0, intf.id, baudData, baudData.size, CONTROL_TIMEOUT_MS)
 
             // 3. Set Line Control (8 data bits, 1 stop bit, no parity) -> value 0x0800
-            conn.controlTransfer(reqType, REQ_SET_LINE_CTL, 0x0800, intf.id, null, 0, 5000)
+            conn.controlTransfer(reqType, REQ_SET_LINE_CTL, 0x0800, intf.id, null, 0, CONTROL_TIMEOUT_MS)
 
             // 4. Set MHS (assert DTR and RTS) -> value 0x0303
-            conn.controlTransfer(reqType, REQ_SET_MHS, 0x0303, intf.id, null, 0, 5000)
+            conn.controlTransfer(reqType, REQ_SET_MHS, 0x0303, intf.id, null, 0, CONTROL_TIMEOUT_MS)
 
             _connectionState.value = UsbConnectionState.CONNECTED
             startIoLoop()
             return true
         } catch (e: Exception) {
-            Log.e("Cp210xDriver", "Connection error", e)
+            Log.e(TAG, "Connection error", e)
             cleanup()
             _connectionState.value = UsbConnectionState.ERROR
             return false
@@ -153,7 +180,7 @@ class Cp210xDriver(
                 }
                 close()
             } catch (e: Exception) {
-                Log.w("Cp210xDriver", "Error during release and close", e)
+                Log.w(TAG, "Error during release and close", e)
             }
         }
         connection = null
@@ -167,6 +194,6 @@ class Cp210xDriver(
         val epOut = endpointOut ?: return -1
         if (_connectionState.value != UsbConnectionState.CONNECTED) return -1
         
-        return conn.bulkTransfer(epOut, data, data.size, 1000)
+        return conn.bulkTransfer(epOut, data, data.size, TIMEOUT_MS)
     }
 }

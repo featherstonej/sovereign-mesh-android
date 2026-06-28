@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.database
 
 import android.content.ContentValues
@@ -7,6 +25,9 @@ import com.sovereignmesh.android.crypto.MeshKeystoreManager
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import net.zetetic.database.sqlcipher.SQLiteOpenHelper
 
+/**
+ * Represents a communication channel configured on the Meshtastic device.
+ */
 data class Channel(
     val id: String,
     val name: String,
@@ -33,6 +54,9 @@ data class Channel(
     }
 }
 
+/**
+ * Represents a single mesh packet received or sent, cached locally in the database.
+ */
 data class Message(
     val id: Long,
     val packetId: Int,
@@ -77,6 +101,9 @@ data class Message(
     }
 }
 
+/**
+ * Log entry for signal quality (RSSI/SNR) recorded from incoming packets.
+ */
 data class SignalLog(
     val id: Long,
     val nodeId: Int,
@@ -85,6 +112,10 @@ data class SignalLog(
     val timestamp: Long
 )
 
+/**
+ * MeshDatabaseHelper manages the encrypted local storage for channels, messages,
+ * and signal logs using SQLCipher.
+ */
 class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     context,
     DATABASE_NAME,
@@ -103,7 +134,7 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         }
 
         private const val DATABASE_NAME = "sovereign_mesh_db"
-        private const val DATABASE_VERSION = 2 // Incremented version to apply table migration
+        private const val DATABASE_VERSION = 2
         private const val TAG = "MeshDatabaseHelper"
 
         // Table Channels
@@ -174,10 +205,11 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         db.execSQL(createChannelsTable)
         db.execSQL(createMessagesTable)
         db.execSQL(createSignalLogsTable)
-        // Log.d(TAG, "SQLCipher tables created successfully")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Simple destructive upgrade for initial development cycles.
+        // TODO: Implement proper non-destructive migrations for production release.
         db.execSQL("DROP TABLE IF EXISTS $TABLE_MESSAGES")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_CHANNELS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SIGNAL_LOGS")
@@ -185,7 +217,7 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     }
 
     /**
-     * Gets a writable database.
+     * Retrieves the encrypted writable database.
      */
     fun getWritableEncryptedDatabase(): SQLiteDatabase {
         return try {
@@ -198,7 +230,7 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     }
 
     /**
-     * Gets a readable database.
+     * Retrieves the encrypted readable database.
      */
     fun getReadableEncryptedDatabase(): SQLiteDatabase {
         return try {
@@ -212,6 +244,10 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
 
     // CRUD Channel Methods
 
+    /**
+     * Persists or updates a [Channel] in the database.
+     * @return true if the operation was successful.
+     */
     fun insertChannel(channel: Channel): Boolean {
         val db = getWritableEncryptedDatabase()
         val values = ContentValues().apply {
@@ -228,6 +264,9 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         return result != -1L
     }
 
+    /**
+     * Returns all channels currently marked as active.
+     */
     fun getActiveChannels(): List<Channel> {
         val channels = mutableListOf<Channel>()
         val db = getReadableEncryptedDatabase()
@@ -256,6 +295,9 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
 
     // CRUD Message Methods
 
+    /**
+     * Persists a [Message] in the database.
+     */
     fun insertMessage(message: Message): Boolean {
         val db = getWritableEncryptedDatabase()
         val values = ContentValues().apply {
@@ -277,6 +319,9 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         return result != -1L
     }
 
+    /**
+     * Returns all messages from the database, ordered by timestamp.
+     */
     fun getAllMessages(): List<Message> {
         val messages = mutableListOf<Message>()
         val db = getReadableEncryptedDatabase()
@@ -315,6 +360,9 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         return messages
     }
 
+    /**
+     * Deletes all messages from the database.
+     */
     fun clearAllMessages(): Boolean {
         val db = getWritableEncryptedDatabase()
         val result = db.delete(TABLE_MESSAGES, null, null)
@@ -323,6 +371,9 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
 
     // CRUD Signal Log Methods
 
+    /**
+     * Persists a [SignalLog] entry in the database.
+     */
     fun insertSignalLog(signalLog: SignalLog): Boolean {
         val db = getWritableEncryptedDatabase()
         val values = ContentValues().apply {
@@ -339,6 +390,9 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         return result != -1L
     }
 
+    /**
+     * Returns the most recent signal quality log for a specific node ID.
+     */
     fun getLatestSignalLog(nodeId: Int): SignalLog? {
         val db = getReadableEncryptedDatabase()
         val query = "SELECT * FROM $TABLE_SIGNAL_LOGS WHERE $COL_SIG_NODE_ID = ? ORDER BY $COL_SIG_TIMESTAMP DESC LIMIT 1"

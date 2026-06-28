@@ -1,9 +1,28 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.crypto
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import java.security.KeyStore
 import java.security.SecureRandom
 import javax.crypto.Cipher
@@ -11,17 +30,14 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/**
+ * MeshKeystoreManager leverages the Android TEE (Trusted Execution Environment)
+ * to securely manage the master key used for database encryption.
+ *
+ * This ensures that even if the device's storage is compromised, the mesh
+ * database remains unreadable without the hardware-backed master key.
+ */
 class MeshKeystoreManager(private val context: Context) {
-
-    companion object {
-        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        private const val KEY_ALIAS = "SovereignMeshDbMasterKey"
-        private const val PREFS_NAME = "com.sovereignmesh.android.secure_prefs"
-        private const val KEY_ENCRYPTED_PASSCODE = "encrypted_db_passcode"
-        private const val AES_GCM_NOPADDING = "AES/GCM/NoPadding"
-        private const val GCM_IV_LENGTH = 12
-        private const val GCM_TAG_LENGTH = 128
-    }
 
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply {
         load(null)
@@ -33,6 +49,7 @@ class MeshKeystoreManager(private val context: Context) {
 
     /**
      * Retrieves the database passcode, generating and storing a secure random one if it doesn't exist.
+     * @return A 32-character base64 encoded secure passcode.
      */
     fun getOrCreateDatabasePasscode(): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -42,12 +59,11 @@ class MeshKeystoreManager(private val context: Context) {
             try {
                 return decrypt(encryptedPasscode)
             } catch (e: Exception) {
-                // If decryption fails (e.g. keystore cleared), we must handle it.
-                // We'll generate a new one, meaning the database will be reset.
+                Log.w(TAG, "Failed to decrypt database passcode, possibly due to Keystore reset. Generating new one.")
             }
         }
 
-        // Generate a new secure random passcode (32 characters)
+        // Generate a new secure random passcode (24 raw bytes -> ~32 base64 chars)
         val randomBytes = ByteArray(24)
         SecureRandom().nextBytes(randomBytes)
         val newPasscode = Base64.encodeToString(randomBytes, Base64.NO_WRAP)
@@ -60,21 +76,25 @@ class MeshKeystoreManager(private val context: Context) {
 
     private fun ensureMasterKeyExists() {
         if (!keyStore.containsAlias(KEY_ALIAS)) {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                ANDROID_KEYSTORE
-            )
-            val spec = KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
+            try {
+                val keyGenerator = KeyGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_AES,
+                    ANDROID_KEYSTORE
+                )
+                val spec = KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build()
 
-            keyGenerator.init(spec)
-            keyGenerator.generateKey()
+                keyGenerator.init(spec)
+                keyGenerator.generateKey()
+            } catch (e: Exception) {
+                Log.e(TAG, "Critical failure: Could not generate master key in Android Keystore", e)
+            }
         }
     }
 
@@ -109,5 +129,15 @@ class MeshKeystoreManager(private val context: Context) {
 
         val decryptedBytes = cipher.doFinal(ciphertext)
         return String(decryptedBytes, Charsets.UTF_8)
+    }
+
+    companion object {
+        private const val TAG = "MeshKeystoreManager"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEY_ALIAS = "SovereignMeshDbMasterKey"
+        private const val PREFS_NAME = "com.sovereignmesh.android.secure_prefs"
+        private const val KEY_ENCRYPTED_PASSCODE = "encrypted_db_passcode"
+        private const val AES_GCM_NOPADDING = "AES/GCM/NoPadding"
+        private const val GCM_TAG_LENGTH = 128
     }
 }

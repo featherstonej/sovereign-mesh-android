@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.hardware.usb
 
 import android.hardware.usb.UsbConstants
@@ -15,6 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * Driver implementation for WCH CH340 / CH341 USB-to-Serial bridge chipsets.
+ */
 class Ch34xDriver(
     private val usbManager: UsbManager,
     private val device: UsbDevice
@@ -34,20 +55,26 @@ class Ch34xDriver(
     private var ioJob: Job? = null
     private val driverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    companion object {
+        private const val TAG = "Ch34xDriver"
+        private const val TIMEOUT_MS = 1000
+        private const val CONTROL_TIMEOUT_MS = 5000
+    }
+
     override fun connect(): Boolean {
         if (_connectionState.value == UsbConnectionState.CONNECTED) return true
         _connectionState.value = UsbConnectionState.CONNECTING
 
         try {
             val conn = usbManager.openDevice(device) ?: run {
-                Log.e("Ch34xDriver", "Failed to open device connection")
+                Log.e(TAG, "Failed to open device connection")
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
             }
             connection = conn
 
             if (device.interfaceCount == 0) {
-                Log.e("Ch34xDriver", "Device has no interfaces")
+                Log.e(TAG, "Device has no interfaces")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -68,14 +95,14 @@ class Ch34xDriver(
             }
 
             if (endpointIn == null || endpointOut == null) {
-                Log.e("Ch34xDriver", "Required bulk endpoints not found")
+                Log.e(TAG, "Required bulk endpoints not found")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
             }
 
             if (!conn.claimInterface(intf, true)) {
-                Log.e("Ch34xDriver", "Failed to claim interface")
+                Log.e(TAG, "Failed to claim interface")
                 cleanup()
                 _connectionState.value = UsbConnectionState.ERROR
                 return false
@@ -85,25 +112,25 @@ class Ch34xDriver(
             val reqType = 0x40 // Host to Device, Vendor
 
             // 1. Initial configuration
-            conn.controlTransfer(reqType, 0x5F, 0, 0, null, 0, 5000)
-            conn.controlTransfer(reqType, 0xA1, 0, 0, null, 0, 5000)
+            conn.controlTransfer(reqType, 0x5F, 0, 0, null, 0, CONTROL_TIMEOUT_MS)
+            conn.controlTransfer(reqType, 0xA1, 0, 0, null, 0, CONTROL_TIMEOUT_MS)
 
             // 2. Configure line parameters and baud rate (115200)
             // Register settings for CH340 115200:
             // Divisors: Value 0x1312, Index 0xCC09
             // Value 0x2518, Index 0x00D3
-            conn.controlTransfer(reqType, 0x9A, 0x1312, 0xCC09, null, 0, 5000)
-            conn.controlTransfer(reqType, 0x9A, 0x2518, 0x00D3, null, 0, 5000)
+            conn.controlTransfer(reqType, 0x9A, 0x1312, 0xCC09, null, 0, CONTROL_TIMEOUT_MS)
+            conn.controlTransfer(reqType, 0x9A, 0x2518, 0x00D3, null, 0, CONTROL_TIMEOUT_MS)
 
             // 3. Set control lines / handshake (assert RTS and DTR)
             // Value 0xFF7F represents the control bits for DTR/RTS
-            conn.controlTransfer(reqType, 0xA4, 0xFF7F, 0, null, 0, 5000)
+            conn.controlTransfer(reqType, 0xA4, 0xFF7F, 0, null, 0, CONTROL_TIMEOUT_MS)
 
             _connectionState.value = UsbConnectionState.CONNECTED
             startIoLoop()
             return true
         } catch (e: Exception) {
-            Log.e("Ch34xDriver", "Connection error", e)
+            Log.e(TAG, "Connection error", e)
             cleanup()
             _connectionState.value = UsbConnectionState.ERROR
             return false
@@ -144,7 +171,7 @@ class Ch34xDriver(
                 usbInterface?.let { releaseInterface(it) }
                 close()
             } catch (e: Exception) {
-                Log.w("Ch34xDriver", "Error during release and close", e)
+                Log.w(TAG, "Error during release and close", e)
             }
         }
         connection = null
@@ -158,6 +185,6 @@ class Ch34xDriver(
         val epOut = endpointOut ?: return -1
         if (_connectionState.value != UsbConnectionState.CONNECTED) return -1
         
-        return conn.bulkTransfer(epOut, data, data.size, 1000)
+        return conn.bulkTransfer(epOut, data, data.size, TIMEOUT_MS)
     }
 }

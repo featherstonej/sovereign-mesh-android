@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.ui
 
 import android.annotation.SuppressLint
@@ -32,6 +50,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * DashboardScreen is the primary user interface for managing hardware connections,
+ * selecting communication channels, and viewing decrypted mesh traffic.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -66,7 +88,6 @@ fun DashboardScreen(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Header 1: Connection controls
             item {
                 ConnectionControlsCard(
                     usbState = usbState,
@@ -82,7 +103,6 @@ fun DashboardScreen(
                 )
             }
 
-            // Header 2: Channel selector panel
             item {
                 Spacer(modifier = Modifier.height(2.dp))
                 ChannelSelectorPanel(
@@ -94,7 +114,6 @@ fun DashboardScreen(
                 )
             }
 
-            // Header 3: Chat logs title row
             item {
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
@@ -132,7 +151,6 @@ fun DashboardScreen(
                 }
             }
 
-            // Message Items or Empty State
             if (messages.isEmpty()) {
                 item {
                     Box(
@@ -168,7 +186,6 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Send message row (Fixed at bottom)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -356,6 +373,9 @@ fun DashboardScreen(
     }
 }
 
+/**
+ * Card containing controls for initiating and monitoring USB-OTG and BLE connections.
+ */
 @Composable
 fun ConnectionControlsCard(
     usbState: UsbConnectionState,
@@ -445,7 +465,7 @@ fun ConnectionControlsCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("📡 BLE LINK:", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(6.6.dp))
                     val statusText = when (bleState) {
                         BleConnectionState.CONNECTED -> "CONNECTED"
                         BleConnectionState.SCANNING -> "SCANNING"
@@ -560,6 +580,9 @@ fun ConnectionControlsCard(
     }
 }
 
+/**
+ * Panel for selecting active communication channels and creating new ones.
+ */
 @Composable
 fun ChannelSelectorPanel(
     channels: List<Channel>,
@@ -667,6 +690,9 @@ fun ChannelSelectorPanel(
     }
 }
 
+/**
+ * Individual message bubble displaying decrypted payload and metadata.
+ */
 @Composable
 fun MessageItem(
     message: Message,
@@ -791,6 +817,9 @@ fun MessageItem(
     }
 }
 
+/**
+ * Dialog for generating a new symmetric encryption channel.
+ */
 @Composable
 fun AddChannelDialog(
     onDismiss: () -> Unit,

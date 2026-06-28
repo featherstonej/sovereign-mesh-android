@@ -1,8 +1,27 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.ui
 
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sovereignmesh.android.crypto.MeshCryptoEngine
@@ -17,6 +36,7 @@ import com.sovereignmesh.android.util.stego.StegoEngine
 import com.sovereignmesh.android.util.tts.MeshTtsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,6 +45,13 @@ import org.meshtastic.proto.MeshProtos
 import org.meshtastic.proto.ChannelProtos
 import org.meshtastic.proto.Portnums
 
+/**
+ * SovereignViewModel is the primary state container for the UI layer.
+ *
+ * It bridges the [MeshHardwareService] with the Jetpack Compose UI, handles
+ * message encryption/decryption, database persistence, and tactical utilities
+ * like Steganography and Text-to-Speech.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SovereignViewModel(
     private val context: Context,
@@ -32,48 +59,59 @@ class SovereignViewModel(
 ) : ViewModel() {
 
     private val _service = MutableStateFlow<MeshHardwareService?>(null)
+    /** The currently active [MeshHardwareService] instance. */
     val service: StateFlow<MeshHardwareService?> = _service.asStateFlow()
 
     // Expose flows from background service
+    /** Observed connection state for the USB-OTG interface. */
     val usbConnectionState = _service.flatMapLatest { service ->
         service?.usbConnectionState ?: flowOf(UsbConnectionState.DISCONNECTED)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UsbConnectionState.DISCONNECTED)
 
+    /** Observed connection state for the Bluetooth LE interface. */
     val bleConnectionState = _service.flatMapLatest { service ->
         service?.bleConnectionState ?: flowOf(BleConnectionState.DISCONNECTED)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BleConnectionState.DISCONNECTED)
 
+    /** Observed error messages from the BLE subsystem. */
     val bleErrorMessage = _service.flatMapLatest { service ->
         service?.bleErrorMessage ?: flowOf(null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    /** Observed list of nearby Bluetooth devices. */
     val discoveredBleDevices = _service.flatMapLatest { service ->
         service?.discoveredBleDevices ?: flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Database cached items
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
+    /** The list of messages for the currently active channel. */
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
 
     private val _channels = MutableStateFlow<List<Channel>>(emptyList())
+    /** All active communication channels stored in the database. */
     val channels: StateFlow<List<Channel>> = _channels.asStateFlow()
 
     private val _activeChannel = MutableStateFlow<Channel?>(null)
+    /** The channel currently selected by the user for communication. */
     val activeChannel: StateFlow<Channel?> = _activeChannel.asStateFlow()
 
     private val _unreadCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    /** A map of channel IDs to their respective unread message counts. */
     val unreadCounts: StateFlow<Map<String, Int>> = _unreadCounts.asStateFlow()
 
     private val _phoneLocation = MutableStateFlow<Pair<Double, Double>?>(null)
+    /** Current GPS coordinates of the phone for tactical mapping. */
     val phoneLocation: StateFlow<Pair<Double, Double>?> = _phoneLocation.asStateFlow()
 
     private val _usePhoneGps = MutableStateFlow(false)
+    /** Whether the app should use the phone's internal GPS for location tracking. */
     val usePhoneGps: StateFlow<Boolean> = _usePhoneGps.asStateFlow()
 
     private var locationListener: android.location.LocationListener? = null
 
     private val secureRandom = SecureRandom()
-    private var myNodeId = 11223344 // Hardcoded mock node ID for current client
+    private var myNodeId = 11223344 // Hardcoded mock node ID for current client until MY_INFO is received.
 
     // Local air-gapped TTS
     private val ttsEngine = MeshTtsEngine(context)
@@ -83,9 +121,12 @@ class SovereignViewModel(
         loadMessages()
     }
 
-    private var incomingPacketsJob: kotlinx.coroutines.Job? = null
-    private var connectionStateJob: kotlinx.coroutines.Job? = null
+    private var incomingPacketsJob: Job? = null
+    private var connectionStateJob: Job? = null
 
+    /**
+     * Connects the ViewModel to the active [MeshHardwareService].
+     */
     fun setService(hardwareService: MeshHardwareService) {
         incomingPacketsJob?.cancel()
         connectionStateJob?.cancel()
@@ -112,6 +153,9 @@ class SovereignViewModel(
         _service.value = hardwareService
     }
 
+    /**
+     * Requests the full configuration from the connected Meshtastic node.
+     */
     fun requestDeviceConfig() {
         val serviceRef = _service.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -131,14 +175,12 @@ class SovereignViewModel(
                 .build()
             val bytes = toRadio.toByteArray()
             serviceRef.sendPacket(bytes)
-            // android.util.Log.d("SovereignViewModel", "Sent want_config_id=$nonce request to device")
+            Log.d(TAG, "Sent want_config_id=$nonce request to device")
         }
     }
 
     private suspend fun handleDeviceChannel(deviceChannel: ChannelProtos.Channel) {
-        // android.util.Log.d("SovereignViewModel", "handleDeviceChannel entry: index=${deviceChannel.index}, role=${deviceChannel.role}, hasSettings=${deviceChannel.hasSettings()}")
         if (!deviceChannel.hasSettings()) {
-            // android.util.Log.w("SovereignViewModel", "handleDeviceChannel returning early: no settings for channel index ${deviceChannel.index}")
             return
         }
         val settings = deviceChannel.settings
@@ -147,14 +189,13 @@ class SovereignViewModel(
         val index = deviceChannel.index
         val role = deviceChannel.role
         
-        // android.util.Log.d("SovereignViewModel", "Received channel from device: index=$index, name=$name, role=$role, pskSize=${psk.size}")
-
         val displayName = if (name.isEmpty()) {
             if (role == ChannelProtos.Channel.Role.PRIMARY) "Meshtastic Primary" else "Channel $index"
         } else {
             name
         }
 
+        // Handle Meshtastic default key mapping
         val finalPsk = when (psk.size) {
             1 -> {
                 val valByte = psk[0].toInt()
@@ -195,10 +236,9 @@ class SovereignViewModel(
             active = active
         )
 
-        val insertSuccess = withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             databaseHelper.insertChannel(channel)
         }
-        // android.util.Log.d("SovereignViewModel", "Inserted channel to DB: $displayName (active=$active), success=$insertSuccess")
         
         loadChannels()
     }
@@ -209,27 +249,23 @@ class SovereignViewModel(
             val isConnected = bleConnectionState.value == BleConnectionState.CONNECTED ||
                               usbConnectionState.value == UsbConnectionState.CONNECTED
             
-            // android.util.Log.d("SovereignViewModel", "loadChannels: active channels count=${list.size}, isConnected=$isConnected")
-            // for (ch in list) {
-            //     android.util.Log.d("SovereignViewModel", "  -> Active Channel in DB: id=${ch.id}, name=${ch.name}, active=${ch.active}")
-            // }
-
             if (list.isEmpty() && !isConnected) {
                 // Pre-populate with a default AES-256 secure channel if database is empty and not connected
                 val defaultKey = ByteArray(32).apply { secureRandom.nextBytes(this) }
                 val defaultChannel = Channel("ch_primary", "Stealth-Mesh-Primary", defaultKey, true)
-                val success = databaseHelper.insertChannel(defaultChannel)
-                // android.util.Log.d("SovereignViewModel", "Pre-populated mock channel Stealth-Mesh-Primary success=$success")
+                databaseHelper.insertChannel(defaultChannel)
                 _channels.value = listOf(defaultChannel)
                 _activeChannel.value = defaultChannel
             } else {
                 _channels.value = list
                 _activeChannel.value = list.firstOrNull()
-                // android.util.Log.d("SovereignViewModel", "Updated channels UI state flow: activeChannel=${_activeChannel.value?.name}")
             }
         }
     }
 
+    /**
+     * Manually adds a new secure channel with a randomly generated key.
+     */
     fun addChannel(name: String, useAes256: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             val keySize = if (useAes256) 32 else 16
@@ -241,6 +277,9 @@ class SovereignViewModel(
         }
     }
 
+    /**
+     * Selects a channel as active and clears its unread message count.
+     */
     fun selectChannel(channel: Channel) {
         _activeChannel.value = channel
         
@@ -251,6 +290,9 @@ class SovereignViewModel(
         loadMessages()
     }
 
+    /**
+     * Loads messages from the database for the currently active channel.
+     */
     fun loadMessages() {
         viewModelScope.launch(Dispatchers.IO) {
             val all = databaseHelper.getAllMessages()
@@ -263,6 +305,9 @@ class SovereignViewModel(
         }
     }
 
+    /**
+     * Deletes all messages from the database.
+     */
     fun clearAllMessages() {
         viewModelScope.launch(Dispatchers.IO) {
             databaseHelper.clearAllMessages()
@@ -272,29 +317,23 @@ class SovereignViewModel(
 
     // Hardware operations forwards
 
-    fun autoConnectUsb() {
-        _service.value?.autoConnectUsb()
-    }
+    /** Triggers USB auto-connect in the hardware service. */
+    fun autoConnectUsb() = _service.value?.autoConnectUsb()
 
-    fun disconnectUsb() {
-        _service.value?.disconnectUsbDevice()
-    }
+    /** Disconnects the active USB device. */
+    fun disconnectUsb() = _service.value?.disconnectUsbDevice()
 
-    fun startBleScan() {
-        _service.value?.startBleScan()
-    }
+    /** Starts a Bluetooth LE device scan. */
+    fun startBleScan() = _service.value?.startBleScan()
 
-    fun stopBleScan() {
-        _service.value?.stopBleScan()
-    }
+    /** Stops any active Bluetooth LE scan. */
+    fun stopBleScan() = _service.value?.stopBleScan()
 
-    fun connectBle(device: BluetoothDevice) {
-        _service.value?.connectBleDevice(device)
-    }
+    /** Initiates connection to the specified BLE device. */
+    fun connectBle(device: BluetoothDevice) = _service.value?.connectBleDevice(device)
 
-    fun disconnectBle() {
-        _service.value?.disconnectBleDevice()
-    }
+    /** Disconnects the active Bluetooth LE device. */
+    fun disconnectBle() = _service.value?.disconnectBleDevice()
 
     /**
      * Speaks decrypted mesh alerts locally using Text-to-Speech synthesis.
@@ -356,7 +395,7 @@ class SovereignViewModel(
             out.close()
             file.absolutePath
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to save stego backup", e)
             null
         }
     }
@@ -417,7 +456,7 @@ class SovereignViewModel(
             
             // Transmit protobuf packet over active hardware link
             val sendSuccess = serviceRef.sendPacket(packetBytes) >= 0
-            // android.util.Log.d("SovereignViewModel", "sendMessage: sent ToRadio packet, success=$sendSuccess, channelIndex=$channelIndex")
+            Log.d(TAG, "sendMessage: sent ToRadio packet, success=$sendSuccess, channelIndex=$channelIndex")
             
             if (encryptedBytes != null) {
                 // Cache locally as sent message
@@ -463,13 +502,12 @@ class SovereignViewModel(
             }
 
             if (fromRadio != null && fromRadio.payloadVariantCase != MeshProtos.FromRadio.PayloadVariantCase.PAYLOADVARIANT_NOT_SET) {
-                // android.util.Log.d("SovereignViewModel", "Parsed FromRadio message: variant=${fromRadio.payloadVariantCase}")
                 when (fromRadio.payloadVariantCase) {
                     MeshProtos.FromRadio.PayloadVariantCase.MY_INFO -> {
                         val myNodeNum = fromRadio.myInfo.myNodeNum
                         if (myNodeNum != 0) {
                             myNodeId = myNodeNum.toInt()
-                            // android.util.Log.d("SovereignViewModel", "Updated myNodeId dynamically to $myNodeId")
+                            Log.d(TAG, "Updated myNodeId dynamically to $myNodeId")
                         }
                     }
                     MeshProtos.FromRadio.PayloadVariantCase.CHANNEL -> {
@@ -606,6 +644,9 @@ class SovereignViewModel(
         }
     }
 
+    /**
+     * Toggles the use of the phone's internal GPS for location reporting.
+     */
     @android.annotation.SuppressLint("MissingPermission")
     fun setUsePhoneGps(enabled: Boolean) {
         _usePhoneGps.value = enabled
@@ -615,7 +656,6 @@ class SovereignViewModel(
             val listener = object : android.location.LocationListener {
                 override fun onLocationChanged(location: android.location.Location) {
                     _phoneLocation.value = Pair(location.latitude, location.longitude)
-                    // android.util.Log.d("SovereignViewModel", "GPS Location updated: lat=${location.latitude}, lon=${location.longitude}")
                 }
                 override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
@@ -648,10 +688,10 @@ class SovereignViewModel(
                     _phoneLocation.value = Pair(lastKnown.latitude, lastKnown.longitude)
                 }
             } catch (e: SecurityException) {
-                android.util.Log.e("SovereignViewModel", "Location permissions missing or denied: ${e.message}")
+                Log.e(TAG, "Location permissions missing or denied: ${e.message}")
                 _usePhoneGps.value = false
             } catch (e: Exception) {
-                android.util.Log.e("SovereignViewModel", "Failed to start location updates: ${e.message}")
+                Log.e(TAG, "Failed to start location updates: ${e.message}")
                 _usePhoneGps.value = false
             }
         } else {
@@ -670,5 +710,9 @@ class SovereignViewModel(
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
             locationManager.removeUpdates(it)
         }
+    }
+
+    companion object {
+        private const val TAG = "SovereignViewModel"
     }
 }

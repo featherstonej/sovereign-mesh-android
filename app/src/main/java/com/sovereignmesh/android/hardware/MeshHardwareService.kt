@@ -1,3 +1,21 @@
+/*
+ * Sovereign Mesh (Android)
+ * Copyright (C) 2025 Sovereign Mesh Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.sovereignmesh.android.hardware
 
 import android.annotation.SuppressLint
@@ -22,7 +40,6 @@ import android.hardware.usb.UsbManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
-import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -35,8 +52,15 @@ import com.sovereignmesh.android.hardware.ble.BleClient
 import com.sovereignmesh.android.hardware.ble.BleConnectionState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import java.util.UUID
 
+/**
+ * MeshHardwareService is a Foreground Service that manages low-level connectivity
+ * to Meshtastic hardware via USB-OTG and Bluetooth LE.
+ *
+ * It provides a unified stream of incoming packets and manages the lifecycle of
+ * hardware drivers, ensuring the connection remains active even when the UI
+ * is in the background.
+ */
 class MeshHardwareService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -47,12 +71,15 @@ class MeshHardwareService : Service() {
     private var activeDevice: UsbDevice? = null
 
     private val _usbConnectionState = MutableStateFlow(UsbConnectionState.DISCONNECTED)
-    val usbConnectionState: StateFlow<UsbConnectionState> = _usbusbConnectionStateFlow()
+    /** The current connection state of the USB-OTG interface. */
+    val usbConnectionState: StateFlow<UsbConnectionState> = _usbConnectionState.asStateFlow()
 
     private val _incomingBytes = MutableSharedFlow<ByteArray>()
+    /** Raw byte stream from the active USB interface. */
     val incomingBytes: SharedFlow<ByteArray> = _incomingBytes.asSharedFlow()
 
     private val _incomingPackets = MutableSharedFlow<ByteArray>()
+    /** Decoded Meshtastic packets received from any active hardware interface. */
     val incomingPackets: SharedFlow<ByteArray> = _incomingPackets.asSharedFlow()
 
     private val slipDecoder = SlipDecoder()
@@ -62,24 +89,29 @@ class MeshHardwareService : Service() {
     private var bleClient: BleClient? = null
 
     private val _bleConnectionState = MutableStateFlow(BleConnectionState.DISCONNECTED)
+    /** The current connection state of the Bluetooth LE interface. */
     val bleConnectionState: StateFlow<BleConnectionState> = _bleConnectionState.asStateFlow()
 
     private val _bleErrorMessage = MutableStateFlow<String?>(null)
+    /** Latest error message from the BLE subsystem. */
     val bleErrorMessage: StateFlow<String?> = _bleErrorMessage.asStateFlow()
 
     private val _discoveredBleDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
+    /** List of BLE devices discovered during an active scan. */
     val discoveredBleDevices: StateFlow<List<BluetoothDevice>> = _discoveredBleDevices.asStateFlow()
-
-    // Helper state logic extensions to ensure type-safe flow exposure
-    private fun MutableStateFlow<UsbConnectionState>.asUsbStateFlow(): StateFlow<UsbConnectionState> = this
 
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "mesh_hardware_service_channel"
         private const val TAG = "MeshHardwareService"
+        
+        // Meshtastic serial packet constants
+        private const val SERIAL_HEADER_1 = 0x94.toByte()
+        private const val SERIAL_HEADER_2 = 0xC3.toByte()
     }
 
     inner class LocalBinder : Binder() {
+        /** Returns the [MeshHardwareService] instance. */
         fun getService(): MeshHardwareService = this@MeshHardwareService
     }
 
@@ -287,8 +319,9 @@ class MeshHardwareService : Service() {
         return driver.write(data)
     }
 
-    // BLE Operations
-
+    /**
+     * Starts scanning for nearby Bluetooth LE Meshtastic devices.
+     */
     @SuppressLint("MissingPermission")
     fun startBleScan() {
         _bleErrorMessage.value = null
@@ -319,6 +352,9 @@ class MeshHardwareService : Service() {
         Log.d(TAG, "BLE scan started successfully")
     }
 
+    /**
+     * Stops any active Bluetooth LE device scanning.
+     */
     @SuppressLint("MissingPermission")
     fun stopBleScan() {
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
@@ -329,6 +365,9 @@ class MeshHardwareService : Service() {
         Log.d(TAG, "BLE scan stopped")
     }
 
+    /**
+     * Initiates a GATT connection to the specified [BluetoothDevice].
+     */
     fun connectBleDevice(device: BluetoothDevice) {
         stopBleScan()
         disconnectBleDevice()
@@ -363,6 +402,9 @@ class MeshHardwareService : Service() {
         }
     }
 
+    /**
+     * Closes the active Bluetooth LE client session.
+     */
     fun disconnectBleDevice() {
         bleClient?.disconnect()
         bleClient = null
@@ -373,6 +415,12 @@ class MeshHardwareService : Service() {
 
     /**
      * Encodes a raw packet using SLIP and sends it over the active interface.
+     *
+     * For USB connections, it wraps the packet with the required Meshtastic
+     * serial header before SLIP framing.
+     *
+     * @param packet The raw payload to transmit.
+     * @return The number of bytes successfully sent, or -1 on failure.
      */
     fun sendPacket(packet: ByteArray): Int {
         val client = bleClient
@@ -385,8 +433,8 @@ class MeshHardwareService : Service() {
         if (driver != null && _usbConnectionState.value == UsbConnectionState.CONNECTED) {
             val size = packet.size
             val headerAndPayload = ByteArray(4 + size)
-            headerAndPayload[0] = 0x94.toByte()
-            headerAndPayload[1] = 0xC3.toByte()
+            headerAndPayload[0] = SERIAL_HEADER_1
+            headerAndPayload[1] = SERIAL_HEADER_2
             headerAndPayload[2] = ((size shr 8) and 0xFF).toByte()
             headerAndPayload[3] = (size and 0xFF).toByte()
             System.arraycopy(packet, 0, headerAndPayload, 4, size)
@@ -448,12 +496,5 @@ class MeshHardwareService : Service() {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
-    }
-
-    private fun StateFlow<UsbConnectionState>.asStateFlow(): StateFlow<UsbConnectionState> = this
-    
-    // Custom getter function for backward compatibility mapping
-    private fun _usbusbConnectionStateFlow(): StateFlow<UsbConnectionState> {
-        return _usbConnectionState.asUsbStateFlow()
     }
 }
