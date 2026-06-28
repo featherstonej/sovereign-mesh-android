@@ -85,7 +85,7 @@ data class SignalLog(
     val timestamp: Long
 )
 
-class MeshDatabaseHelper(context: Context) : SQLiteOpenHelper(
+class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     context,
     DATABASE_NAME,
     MeshKeystoreManager(context).getOrCreateDatabasePasscode(),
@@ -98,6 +98,10 @@ class MeshDatabaseHelper(context: Context) : SQLiteOpenHelper(
 ) {
 
     companion object {
+        init {
+            System.loadLibrary("sqlcipher")
+        }
+
         private const val DATABASE_NAME = "sovereign_mesh_db"
         private const val DATABASE_VERSION = 2 // Incremented version to apply table migration
         private const val TAG = "MeshDatabaseHelper"
@@ -184,14 +188,26 @@ class MeshDatabaseHelper(context: Context) : SQLiteOpenHelper(
      * Gets a writable database.
      */
     fun getWritableEncryptedDatabase(): SQLiteDatabase {
-        return writableDatabase as SQLiteDatabase
+        return try {
+            writableDatabase as SQLiteDatabase
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open writable database, performing self-healing deletion: ${e.message}")
+            context.deleteDatabase(DATABASE_NAME)
+            writableDatabase as SQLiteDatabase
+        }
     }
 
     /**
      * Gets a readable database.
      */
     fun getReadableEncryptedDatabase(): SQLiteDatabase {
-        return readableDatabase as SQLiteDatabase
+        return try {
+            readableDatabase as SQLiteDatabase
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open readable database, performing self-healing deletion: ${e.message}")
+            context.deleteDatabase(DATABASE_NAME)
+            readableDatabase as SQLiteDatabase
+        }
     }
 
     // CRUD Channel Methods
@@ -297,6 +313,12 @@ class MeshDatabaseHelper(context: Context) : SQLiteOpenHelper(
         }
         cursor.close()
         return messages
+    }
+
+    fun clearAllMessages(): Boolean {
+        val db = getWritableEncryptedDatabase()
+        val result = db.delete(TABLE_MESSAGES, null, null)
+        return result >= 0
     }
 
     // CRUD Signal Log Methods

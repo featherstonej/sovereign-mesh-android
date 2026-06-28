@@ -25,6 +25,7 @@ import android.os.IBinder
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.sovereignmesh.android.hardware.usb.UsbConnectionState
 import com.sovereignmesh.android.hardware.usb.UsbSerialDriver
 import com.sovereignmesh.android.hardware.usb.UsbSerialManager
@@ -62,6 +63,9 @@ class MeshHardwareService : Service() {
 
     private val _bleConnectionState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     val bleConnectionState: StateFlow<BleConnectionState> = _bleConnectionState.asStateFlow()
+
+    private val _bleErrorMessage = MutableStateFlow<String?>(null)
+    val bleErrorMessage: StateFlow<String?> = _bleErrorMessage.asStateFlow()
 
     private val _discoveredBleDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val discoveredBleDevices: StateFlow<List<BluetoothDevice>> = _discoveredBleDevices.asStateFlow()
@@ -166,7 +170,12 @@ class MeshHardwareService : Service() {
             addAction(UsbSerialManager.ACTION_USB_PERMISSION)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
-        registerReceiver(usbReceiver, filter)
+        ContextCompat.registerReceiver(
+            this,
+            usbReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -282,6 +291,7 @@ class MeshHardwareService : Service() {
 
     @SuppressLint("MissingPermission")
     fun startBleScan() {
+        _bleErrorMessage.value = null
         val adapter = bluetoothAdapter ?: run {
             Log.e(TAG, "Bluetooth not supported on this device")
             _bleConnectionState.value = BleConnectionState.ERROR
@@ -301,16 +311,11 @@ class MeshHardwareService : Service() {
         _discoveredBleDevices.value = emptyList()
         _bleConnectionState.value = BleConnectionState.SCANNING
 
-        // Filter for Meshtastic Service UUID
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(UUID.fromString("cb0b9050-c897-11e7-b861-9a745287fe97")))
-            .build()
-
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        scanner.startScan(listOf(filter), settings, bleScanCallback)
+        scanner.startScan(null, settings, bleScanCallback)
         Log.d(TAG, "BLE scan started successfully")
     }
 
@@ -327,15 +332,24 @@ class MeshHardwareService : Service() {
     fun connectBleDevice(device: BluetoothDevice) {
         stopBleScan()
         disconnectBleDevice()
+        _bleErrorMessage.value = null
 
         val client = BleClient(this, device)
         bleClient = client
 
         serviceScope.launch {
+            delay(500)
+
             launch {
                 client.connectionState.collect { state ->
                     _bleConnectionState.value = state
                     updateNotification()
+                }
+            }
+
+            launch {
+                client.errorMessage.collect { error ->
+                    _bleErrorMessage.value = error
                 }
             }
 
@@ -353,6 +367,7 @@ class MeshHardwareService : Service() {
         bleClient?.disconnect()
         bleClient = null
         _bleConnectionState.value = BleConnectionState.DISCONNECTED
+        _bleErrorMessage.value = null
         updateNotification()
     }
 
@@ -368,7 +383,15 @@ class MeshHardwareService : Service() {
 
         val driver = activeDriver
         if (driver != null && _usbConnectionState.value == UsbConnectionState.CONNECTED) {
-            val framed = SlipFramer.encode(packet)
+            val size = packet.size
+            val headerAndPayload = ByteArray(4 + size)
+            headerAndPayload[0] = 0x94.toByte()
+            headerAndPayload[1] = 0xC3.toByte()
+            headerAndPayload[2] = ((size shr 8) and 0xFF).toByte()
+            headerAndPayload[3] = (size and 0xFF).toByte()
+            System.arraycopy(packet, 0, headerAndPayload, 4, size)
+            
+            val framed = SlipFramer.encode(headerAndPayload)
             return sendBytes(framed)
         }
 

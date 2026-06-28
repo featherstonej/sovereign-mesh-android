@@ -2,10 +2,13 @@ package com.sovereignmesh.android.ui
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -39,8 +42,11 @@ fun MapScreen(
 ) {
     val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
+    val phoneLocation by viewModel.phoneLocation.collectAsState()
+    val usePhoneGps by viewModel.usePhoneGps.collectAsState()
     val peerNodeId = 87654321
     var signalLog by remember { mutableStateOf<SignalLog?>(null) }
+    var hasCentered by remember { mutableStateOf(false) }
     
     // Initialize OSMDroid configuration for offline-only tile directory
     remember {
@@ -61,6 +67,21 @@ fun MapScreen(
         }
     }
 
+    val myMarker = remember {
+        Marker(mapView).apply {
+            position = GeoPoint(37.7694, -122.4862)
+            title = "Node: Me (0x11223344)"
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            val myShape = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setSize(40, 40)
+                setColor(android.graphics.Color.BLUE)
+                setStroke(2, android.graphics.Color.WHITE)
+            }
+            icon = myShape
+        }
+    }
+
     remember {
         mapView.apply {
             // CRITICAL: Block map from attempting internet downloads to enforce offline privacy
@@ -75,19 +96,6 @@ fun MapScreen(
             val centerPoint = GeoPoint(37.7694, -122.4862)
             controller.setCenter(centerPoint)
 
-            // Add mock node overlays representing peers discovered locally
-            val myMarker = Marker(this).apply {
-                position = GeoPoint(37.7694, -122.4862)
-                title = "Node: Me (0x11223344)"
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                val myShape = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setSize(40, 40)
-                    setColor(android.graphics.Color.BLUE)
-                    setStroke(2, android.graphics.Color.WHITE)
-                }
-                icon = myShape
-            }
             overlays.add(myMarker)
             overlays.add(peerMarker)
         }
@@ -133,6 +141,31 @@ fun MapScreen(
             peerMarker.icon = shapeDrawable
         }
         mapView.invalidate()
+    }
+
+    // Reset coordinates and camera when toggle is turned off
+    LaunchedEffect(usePhoneGps) {
+        if (!usePhoneGps) {
+            hasCentered = false
+            val defaultCenter = GeoPoint(37.7694, -122.4862)
+            myMarker.position = defaultCenter
+            mapView.controller.setCenter(defaultCenter)
+            mapView.invalidate()
+        }
+    }
+
+    // Update marker position and center map only once when location is first acquired
+    LaunchedEffect(phoneLocation) {
+        val loc = phoneLocation
+        if (usePhoneGps && loc != null) {
+            val geoPoint = GeoPoint(loc.first, loc.second)
+            myMarker.position = geoPoint
+            if (!hasCentered) {
+                mapView.controller.setCenter(geoPoint)
+                hasCentered = true
+            }
+            mapView.invalidate()
+        }
     }
 
     DisposableEffect(mapView) {
@@ -207,6 +240,45 @@ fun MapScreen(
                         fontFamily = FontFamily.Monospace
                     )
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Toggle phone GPS
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.setUsePhoneGps(!usePhoneGps) }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = usePhoneGps,
+                        onCheckedChange = { viewModel.setUsePhoneGps(it) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = CryptoGreen,
+                            uncheckedColor = CryptoTeal,
+                            checkmarkColor = Color.Black
+                        ),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "PHONE GPS",
+                        fontSize = 10.sp,
+                        color = Color.White,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "⚠️ Notice: Enabling Phone GPS requests active location info from your phone sensor.",
+                    fontSize = 8.sp,
+                    color = TextMuted,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 10.sp
+                )
             }
         }
     }

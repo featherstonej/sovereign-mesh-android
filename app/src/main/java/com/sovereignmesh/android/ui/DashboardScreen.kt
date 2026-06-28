@@ -40,10 +40,12 @@ fun DashboardScreen(
 ) {
     val usbState by viewModel.usbConnectionState.collectAsState()
     val bleState by viewModel.bleConnectionState.collectAsState()
+    val bleErrorMessage by viewModel.bleErrorMessage.collectAsState()
     val bleDevices by viewModel.discoveredBleDevices.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val channels by viewModel.channels.collectAsState()
     val activeChannel by viewModel.activeChannel.collectAsState()
+    val unreadCounts by viewModel.unreadCounts.collectAsState()
 
     var showAddChannelDialog by remember { mutableStateOf(false) }
     var textMessage by remember { mutableStateOf("") }
@@ -58,99 +60,115 @@ fun DashboardScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(12.dp)
     ) {
-        // Connection controls card
-        ConnectionControlsCard(
-            usbState = usbState,
-            bleState = bleState,
-            bleDevices = bleDevices,
-            onConnectUsb = { viewModel.autoConnectUsb() },
-            onDisconnectUsb = { viewModel.disconnectUsb() },
-            onStartBleScan = { viewModel.startBleScan() },
-            onStopBleScan = { viewModel.stopBleScan() },
-            onConnectBle = { viewModel.connectBle(it) },
-            onDisconnectBle = { viewModel.disconnectBle() }
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Active Channel & Cryptographic configuration panel
-        ChannelSelectorPanel(
-            channels = channels,
-            activeChannel = activeChannel,
-            onSelectChannel = { viewModel.selectChannel(it) },
-            onAddChannelClick = { showAddChannelDialog = true }
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Chat logs title row
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "📁 DECRYPTED MESSAGES LOG",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = CryptoTeal,
-                fontFamily = FontFamily.Monospace
-            )
-            Text(
-                text = "📂 EXTRACT STEGO",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = CryptoGreen,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier
-                    .clickable { showExtractDialog = true }
-                    .padding(vertical = 2.dp, horizontal = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Decrypted messages list
-        Box(
+        LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(8.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (messages.isEmpty()) {
-                Text(
-                    text = "NO LOCAL RECORDS FOUND\n(Verify connection and channel keys)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = TextMuted,
-                    modifier = Modifier.align(Alignment.Center)
+            // Header 1: Connection controls
+            item {
+                ConnectionControlsCard(
+                    usbState = usbState,
+                    bleState = bleState,
+                    bleDevices = bleDevices,
+                    bleErrorMessage = bleErrorMessage,
+                    onConnectUsb = { viewModel.autoConnectUsb() },
+                    onDisconnectUsb = { viewModel.disconnectUsb() },
+                    onStartBleScan = { viewModel.startBleScan() },
+                    onStopBleScan = { viewModel.stopBleScan() },
+                    onConnectBle = { viewModel.connectBle(it) },
+                    onDisconnectBle = { viewModel.disconnectBle() }
                 )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            }
+
+            // Header 2: Channel selector panel
+            item {
+                Spacer(modifier = Modifier.height(2.dp))
+                ChannelSelectorPanel(
+                    channels = channels,
+                    activeChannel = activeChannel,
+                    unreadCounts = unreadCounts,
+                    onSelectChannel = { viewModel.selectChannel(it) },
+                    onAddChannelClick = { showAddChannelDialog = true }
+                )
+            }
+
+            // Header 3: Chat logs title row
+            item {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(messages) { msg ->
-                        MessageItem(
-                            message = msg,
-                            myNodeId = 11223344,
-                            onSpeakClick = { viewModel.speak(msg.payloadDecrypted ?: "") },
-                            onStegoBackupClick = {
-                                val filePath = viewModel.saveStegoBackup(msg.payloadDecrypted ?: "")
-                                if (filePath != null) {
-                                    stegoBackupFilePath = filePath
-                                }
-                            }
+                    Text(
+                        text = "📁 DECRYPTED MESSAGES LOG",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = CryptoTeal,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "🗑️ CLEAR LOGS",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.error,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .clickable { viewModel.clearAllMessages() }
+                                .padding(vertical = 2.dp, horizontal = 4.dp)
+                        )
+                        Text(
+                            text = "📂 EXTRACT STEGO",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = CryptoGreen,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .clickable { showExtractDialog = true }
+                                .padding(vertical = 2.dp, horizontal = 4.dp)
                         )
                     }
+                }
+            }
+
+            // Message Items or Empty State
+            if (messages.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "NO LOCAL RECORDS FOUND\n(Verify connection and channel keys)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace,
+                            color = TextMuted
+                        )
+                    }
+                }
+            } else {
+                items(messages) { msg ->
+                    MessageItem(
+                        message = msg,
+                        myNodeId = 11223344,
+                        onSpeakClick = { viewModel.speak(msg.payloadDecrypted ?: "") },
+                        onStegoBackupClick = {
+                            val filePath = viewModel.saveStegoBackup(msg.payloadDecrypted ?: "")
+                            if (filePath != null) {
+                                stegoBackupFilePath = filePath
+                            }
+                        }
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Send message row
+        // Send message row (Fixed at bottom)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -343,6 +361,7 @@ fun ConnectionControlsCard(
     usbState: UsbConnectionState,
     bleState: BleConnectionState,
     bleDevices: List<BluetoothDevice>,
+    bleErrorMessage: String?,
     onConnectUsb: () -> Unit,
     onDisconnectUsb: () -> Unit,
     onStartBleScan: () -> Unit,
@@ -482,6 +501,17 @@ fun ConnectionControlsCard(
                 }
             }
 
+            if (bleState == BleConnectionState.ERROR && bleErrorMessage != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "⚠️ $bleErrorMessage",
+                    color = TacticalRed,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             // Discovered BLE Devices dropdown
             if (bleState == BleConnectionState.SCANNING && bleDevices.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -534,6 +564,7 @@ fun ConnectionControlsCard(
 fun ChannelSelectorPanel(
     channels: List<Channel>,
     activeChannel: Channel?,
+    unreadCounts: Map<String, Int>,
     onSelectChannel: (Channel) -> Unit,
     onAddChannelClick: () -> Unit
 ) {
@@ -579,13 +610,41 @@ fun ChannelSelectorPanel(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "# ${channel.name}",
-                        color = if (isActive) CryptoGreen else Color.White,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "# ${channel.name}",
+                            color = if (isActive) CryptoGreen else Color.White,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp
+                        )
+                        val unreadCount = unreadCounts[channel.id] ?: 0
+                        if (unreadCount > 0) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(TacticalRed, shape = RoundedCornerShape(50))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = unreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 9.sp,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                                            includeFontPadding = false
+                                        )
+                                    )
+                                )
+                            }
+                        }
+                    }
                     
                     val keyDesc = if (channel.psk.size == 32) "AES-256" else "AES-128"
                     Box(
