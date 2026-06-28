@@ -174,7 +174,7 @@ class MeshDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         db.execSQL(createChannelsTable)
         db.execSQL(createMessagesTable)
         db.execSQL(createSignalLogsTable)
-        Log.d(TAG, "SQLCipher tables created successfully")
+        // Log.d(TAG, "SQLCipher tables created successfully")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {

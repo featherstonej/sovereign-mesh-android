@@ -131,14 +131,14 @@ class SovereignViewModel(
                 .build()
             val bytes = toRadio.toByteArray()
             serviceRef.sendPacket(bytes)
-            android.util.Log.d("SovereignViewModel", "Sent want_config_id=$nonce request to device")
+            // android.util.Log.d("SovereignViewModel", "Sent want_config_id=$nonce request to device")
         }
     }
 
     private suspend fun handleDeviceChannel(deviceChannel: ChannelProtos.Channel) {
-        android.util.Log.d("SovereignViewModel", "handleDeviceChannel entry: index=${deviceChannel.index}, role=${deviceChannel.role}, hasSettings=${deviceChannel.hasSettings()}")
+        // android.util.Log.d("SovereignViewModel", "handleDeviceChannel entry: index=${deviceChannel.index}, role=${deviceChannel.role}, hasSettings=${deviceChannel.hasSettings()}")
         if (!deviceChannel.hasSettings()) {
-            android.util.Log.w("SovereignViewModel", "handleDeviceChannel returning early: no settings for channel index ${deviceChannel.index}")
+            // android.util.Log.w("SovereignViewModel", "handleDeviceChannel returning early: no settings for channel index ${deviceChannel.index}")
             return
         }
         val settings = deviceChannel.settings
@@ -147,7 +147,7 @@ class SovereignViewModel(
         val index = deviceChannel.index
         val role = deviceChannel.role
         
-        android.util.Log.d("SovereignViewModel", "Received channel from device: index=$index, name=$name, role=$role, pskSize=${psk.size}")
+        // android.util.Log.d("SovereignViewModel", "Received channel from device: index=$index, name=$name, role=$role, pskSize=${psk.size}")
 
         val displayName = if (name.isEmpty()) {
             if (role == ChannelProtos.Channel.Role.PRIMARY) "Meshtastic Primary" else "Channel $index"
@@ -198,7 +198,7 @@ class SovereignViewModel(
         val insertSuccess = withContext(Dispatchers.IO) {
             databaseHelper.insertChannel(channel)
         }
-        android.util.Log.d("SovereignViewModel", "Inserted channel to DB: $displayName (active=$active), success=$insertSuccess")
+        // android.util.Log.d("SovereignViewModel", "Inserted channel to DB: $displayName (active=$active), success=$insertSuccess")
         
         loadChannels()
     }
@@ -209,23 +209,23 @@ class SovereignViewModel(
             val isConnected = bleConnectionState.value == BleConnectionState.CONNECTED ||
                               usbConnectionState.value == UsbConnectionState.CONNECTED
             
-            android.util.Log.d("SovereignViewModel", "loadChannels: active channels count=${list.size}, isConnected=$isConnected")
-            for (ch in list) {
-                android.util.Log.d("SovereignViewModel", "  -> Active Channel in DB: id=${ch.id}, name=${ch.name}, active=${ch.active}")
-            }
+            // android.util.Log.d("SovereignViewModel", "loadChannels: active channels count=${list.size}, isConnected=$isConnected")
+            // for (ch in list) {
+            //     android.util.Log.d("SovereignViewModel", "  -> Active Channel in DB: id=${ch.id}, name=${ch.name}, active=${ch.active}")
+            // }
 
             if (list.isEmpty() && !isConnected) {
                 // Pre-populate with a default AES-256 secure channel if database is empty and not connected
                 val defaultKey = ByteArray(32).apply { secureRandom.nextBytes(this) }
                 val defaultChannel = Channel("ch_primary", "Stealth-Mesh-Primary", defaultKey, true)
                 val success = databaseHelper.insertChannel(defaultChannel)
-                android.util.Log.d("SovereignViewModel", "Pre-populated mock channel Stealth-Mesh-Primary success=$success")
+                // android.util.Log.d("SovereignViewModel", "Pre-populated mock channel Stealth-Mesh-Primary success=$success")
                 _channels.value = listOf(defaultChannel)
                 _activeChannel.value = defaultChannel
             } else {
                 _channels.value = list
                 _activeChannel.value = list.firstOrNull()
-                android.util.Log.d("SovereignViewModel", "Updated channels UI state flow: activeChannel=${_activeChannel.value?.name}")
+                // android.util.Log.d("SovereignViewModel", "Updated channels UI state flow: activeChannel=${_activeChannel.value?.name}")
             }
         }
     }
@@ -417,7 +417,7 @@ class SovereignViewModel(
             
             // Transmit protobuf packet over active hardware link
             val sendSuccess = serviceRef.sendPacket(packetBytes) >= 0
-            android.util.Log.d("SovereignViewModel", "sendMessage: sent ToRadio packet, success=$sendSuccess, channelIndex=$channelIndex")
+            // android.util.Log.d("SovereignViewModel", "sendMessage: sent ToRadio packet, success=$sendSuccess, channelIndex=$channelIndex")
             
             if (encryptedBytes != null) {
                 // Cache locally as sent message
@@ -463,13 +463,13 @@ class SovereignViewModel(
             }
 
             if (fromRadio != null && fromRadio.payloadVariantCase != MeshProtos.FromRadio.PayloadVariantCase.PAYLOADVARIANT_NOT_SET) {
-                android.util.Log.d("SovereignViewModel", "Parsed FromRadio message: variant=${fromRadio.payloadVariantCase}")
+                // android.util.Log.d("SovereignViewModel", "Parsed FromRadio message: variant=${fromRadio.payloadVariantCase}")
                 when (fromRadio.payloadVariantCase) {
                     MeshProtos.FromRadio.PayloadVariantCase.MY_INFO -> {
                         val myNodeNum = fromRadio.myInfo.myNodeNum
                         if (myNodeNum != 0) {
                             myNodeId = myNodeNum.toInt()
-                            android.util.Log.d("SovereignViewModel", "Updated myNodeId dynamically to $myNodeId")
+                            // android.util.Log.d("SovereignViewModel", "Updated myNodeId dynamically to $myNodeId")
                         }
                     }
                     MeshProtos.FromRadio.PayloadVariantCase.CHANNEL -> {
@@ -615,7 +615,7 @@ class SovereignViewModel(
             val listener = object : android.location.LocationListener {
                 override fun onLocationChanged(location: android.location.Location) {
                     _phoneLocation.value = Pair(location.latitude, location.longitude)
-                    android.util.Log.d("SovereignViewModel", "GPS Location updated: lat=${location.latitude}, lon=${location.longitude}")
+                    // android.util.Log.d("SovereignViewModel", "GPS Location updated: lat=${location.latitude}, lon=${location.longitude}")
                 }
                 override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
