@@ -58,7 +58,7 @@ message DeviceUIConfig {
   NodeFilter node_filter = 12;
 
   /*
-   * Node list highlightening
+   * Node list highlighting
    */
   NodeHighlight node_highlight = 13;
 

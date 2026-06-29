@@ -118,6 +118,11 @@ object StegoEngine {
         val pixels = IntArray(width * height)
         stegoBitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
+        val totalCapacityBits = width * height * 3
+        if (totalCapacityBits < 32) {
+            return null // Not enough capacity to even store the 32-bit length prefix
+        }
+
         var pixelIdx = 0
         var channelIdx = 0 // 0 = Red, 1 = Green, 2 = Blue
 

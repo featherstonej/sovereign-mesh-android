@@ -42,7 +42,6 @@ class UsbSerialManager(private val context: Context) {
         // Chipset VIDs
         private const val VID_SILABS = 0x10C4  // CP210x
         private const val VID_WCH = 0x1A86     // CH340 / CH341
-        private const val VID_FTDI = 0x0403    // FTDI
         
         private const val TAG = "UsbSerialManager"
     }
@@ -69,7 +68,7 @@ class UsbSerialManager(private val context: Context) {
      */
     private fun isSupportedDevice(device: UsbDevice): Boolean {
         val vid = device.vendorId
-        if (vid == VID_SILABS || vid == VID_WCH || vid == VID_FTDI) {
+        if (vid == VID_SILABS || vid == VID_WCH) {
             return true
         }
 

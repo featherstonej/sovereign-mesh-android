@@ -63,12 +63,12 @@ message EnvironmentMetrics {
   optional float gas_resistance = 4;
 
   /*
-   * Voltage measured (To be depreciated in favor of PowerMetrics in Meshtastic 3.x)
+   * Voltage measured (To be deprecated in favor of PowerMetrics in Meshtastic 3.x)
    */
   optional float voltage = 5;
 
   /*
-   * Current measured (To be depreciated in favor of PowerMetrics in Meshtastic 3.x)
+   * Current measured (To be deprecated in favor of PowerMetrics in Meshtastic 3.x)
    */
   optional float current = 6;
 

@@ -69,6 +69,7 @@ class MeshHardwareService : Service() {
     // USB properties
     private var activeDriver: UsbSerialDriver? = null
     private var activeDevice: UsbDevice? = null
+    private var usbConnectionJob: Job? = null
 
     private val _usbConnectionState = MutableStateFlow(UsbConnectionState.DISCONNECTED)
     /** The current connection state of the USB-OTG interface. */
@@ -87,6 +88,7 @@ class MeshHardwareService : Service() {
     // Bluetooth properties
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bleClient: BleClient? = null
+    private var bleConnectionJob: Job? = null
 
     private val _bleConnectionState = MutableStateFlow(BleConnectionState.DISCONNECTED)
     /** The current connection state of the Bluetooth LE interface. */
@@ -126,7 +128,7 @@ class MeshHardwareService : Service() {
                             intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                         } else {
                             @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(UsbDevice::class.java.name) as? UsbDevice
+                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE) as? UsbDevice
                         }
                         
                         val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
@@ -144,7 +146,7 @@ class MeshHardwareService : Service() {
                         intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
                     } else {
                         @Suppress("DEPRECATION")
-                        intent.getParcelableExtra(UsbDevice::class.java.name) as? UsbDevice
+                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE) as? UsbDevice
                     }
                     Log.d(TAG, "USB Device Detached: ${device?.deviceName}")
                     if (device != null && device == activeDevice) {
@@ -268,7 +270,7 @@ class MeshHardwareService : Service() {
 
         activeDriver = driver
 
-        serviceScope.launch {
+        usbConnectionJob = serviceScope.launch {
             // Forward driver state to the service's state flow
             launch {
                 driver.connectionState.collect { state ->
@@ -303,6 +305,8 @@ class MeshHardwareService : Service() {
      * Safely closes the active USB OTG driver and releases hardware resources.
      */
     fun disconnectUsbDevice() {
+        usbConnectionJob?.cancel()
+        usbConnectionJob = null
         activeDriver?.disconnect()
         activeDriver = null
         activeDevice = null
@@ -376,7 +380,7 @@ class MeshHardwareService : Service() {
         val client = BleClient(this, device)
         bleClient = client
 
-        serviceScope.launch {
+        bleConnectionJob = serviceScope.launch {
             delay(500)
 
             launch {
@@ -406,6 +410,8 @@ class MeshHardwareService : Service() {
      * Closes the active Bluetooth LE client session.
      */
     fun disconnectBleDevice() {
+        bleConnectionJob?.cancel()
+        bleConnectionJob = null
         bleClient?.disconnect()
         bleClient = null
         _bleConnectionState.value = BleConnectionState.DISCONNECTED

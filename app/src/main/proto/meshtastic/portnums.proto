@@ -129,7 +129,7 @@ enum PortNum {
 
   /*
    * Used for the python IP tunnel feature
-   * ENCODING: IP Packet. Handled by the python API, firmware ignores this one and pases on.
+   * ENCODING: IP Packet. Handled by the python API, firmware ignores this one and passes on.
    */
   IP_TUNNEL_APP = 33;
 

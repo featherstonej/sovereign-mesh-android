@@ -21,7 +21,7 @@
     <!-- Note: Absolute Zero-Telemetry. No android.permission.INTERNET is requested. -->
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="Sovereign Mesh"
         android:roundIcon="@android:drawable/sym_def_app_icon"
