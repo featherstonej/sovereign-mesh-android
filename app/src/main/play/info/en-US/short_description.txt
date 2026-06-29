@@ -1,0 +1,1 @@
+Secure, off-grid mesh networking client for Meshtastic hardware. Zero telemetry.

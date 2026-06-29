@@ -1,0 +1,17 @@
+Sovereign Mesh is an independent, 100% open-source Android application designed to interface with Meshtastic® mesh networking devices. Built from the ground up for privacy-conscious users, it provides a secure pipeline for off-grid communications.
+
+🛡️ CORE PRIVACY & SECURITY
+• Zero Telemetry: No background tracking or third-party data collection.
+• Air-Gapped Ready: Designed for sideloading and entirely offline operation.
+• USB-OTG Support: Connect physically to your node to eliminate local RF eavesdropping.
+• No Internet Permission: The app does not request internet access, ensuring your data stays local.
+
+📡 HARDWARE COMPATIBILITY
+Compatible with Heltec V3, T-Beam, and custom ESP32-S3 hardware running Meshtastic firmware. Supports both Bluetooth LE and USB-OTG connectivity.
+
+🏗️ TECHNICAL STACK
+• Native Kotlin with Jetpack Compose.
+• Meshtastic Protocol Buffers for robust data serialization.
+• Android USB Host API for direct hardware control.
+
+Sovereign Mesh is built for those who value communication sovereignty. No closed binaries, no corporate tracking—just your messages, secured.

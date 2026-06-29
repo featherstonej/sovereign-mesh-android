@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="crypto_green">#00E676</color>
+    <color name="crypto_teal">#26A69A</color>
+    <color name="stealth_background">#121212</color>
+    <color name="stealth_surface">#1E1E1E</color>
+</resources>
