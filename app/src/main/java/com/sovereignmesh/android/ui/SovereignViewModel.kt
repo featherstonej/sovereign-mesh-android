@@ -38,6 +38,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.SecureRandom
@@ -116,6 +118,8 @@ class SovereignViewModel(
 
     private val secureRandom = SecureRandom()
     
+    private val peerLastSeen = mutableMapOf<Int, Long>()
+    
     private val _myNodeId = MutableStateFlow(0)
     /** The local node's unique ID, dynamically updated upon connection. */
     val myNodeId: StateFlow<Int> = _myNodeId.asStateFlow()
@@ -126,6 +130,30 @@ class SovereignViewModel(
     init {
         loadChannels()
         loadMessages()
+        // Periodic background pruning of expired peer location markers (TTL: 60 seconds)
+        viewModelScope.launch {
+            while (isActive) {
+                delay(10000L) // check every 10 seconds
+                val now = System.currentTimeMillis()
+                val expiredIds = peerLastSeen.filter { now - it.value > 60000L }.keys
+                if (expiredIds.isNotEmpty()) {
+                    val current = _peerLocations.value.toMutableMap()
+                    var changed = false
+                    for (id in expiredIds) {
+                        if (current.containsKey(id)) {
+                            current.remove(id)
+                            changed = true
+                        }
+                    }
+                    if (changed) {
+                        _peerLocations.value = current
+                    }
+                    for (id in expiredIds) {
+                        peerLastSeen.remove(id)
+                    }
+                }
+            }
+        }
     }
 
     private var incomingPacketsJob: Job? = null
@@ -154,6 +182,10 @@ class SovereignViewModel(
             }.distinctUntilChanged().collect { connected ->
                 if (connected) {
                     requestDeviceConfig()
+                } else {
+                    _peerLocations.value = emptyMap()
+                    peerLastSeen.clear()
+                    _myNodeId.value = 0
                 }
             }
         }
@@ -429,6 +461,11 @@ class SovereignViewModel(
     fun sendMessage(text: String) {
         val channel = _activeChannel.value ?: return
         val serviceRef = _service.value ?: return
+        val localNodeId = _myNodeId.value
+        if (localNodeId == 0) {
+            Log.w(TAG, "sendMessage: Gated, local node ID is still 0 (device info not synced yet)")
+            return
+        }
         
         viewModelScope.launch(Dispatchers.IO) {
             val packetId = secureRandom.nextInt(1000000000) // positive integer to avoid sign issues
@@ -535,10 +572,11 @@ class SovereignViewModel(
                                 } else if (decodedData.portnum == Portnums.PortNum.POSITION_APP) {
                                     try {
                                         val position = MeshProtos.Position.parseFrom(decodedData.payload)
-                                        if (position.latitudeI != 0 && position.longitudeI != 0) {
+                                        if (position.latitudeI != 0 || position.longitudeI != 0) {
                                             val lat = position.latitudeI / 1e7
                                             val lon = position.longitudeI / 1e7
                                             val peerId = senderNodeId.toInt()
+                                            peerLastSeen[peerId] = System.currentTimeMillis()
                                             val current = _peerLocations.value.toMutableMap()
                                             current[peerId] = Pair(lat, lon)
                                             _peerLocations.value = current
@@ -574,10 +612,11 @@ class SovereignViewModel(
                                         } else if (data.portnum == Portnums.PortNum.POSITION_APP) {
                                             try {
                                                 val position = MeshProtos.Position.parseFrom(data.payload)
-                                                if (position.latitudeI != 0 && position.longitudeI != 0) {
+                                                if (position.latitudeI != 0 || position.longitudeI != 0) {
                                                     val lat = position.latitudeI / 1e7
                                                     val lon = position.longitudeI / 1e7
                                                     val peerId = senderNodeId.toInt()
+                                                    peerLastSeen[peerId] = System.currentTimeMillis()
                                                     val current = _peerLocations.value.toMutableMap()
                                                     current[peerId] = Pair(lat, lon)
                                                     _peerLocations.value = current
@@ -695,6 +734,11 @@ class SovereignViewModel(
     private var lastGpsUpdateToNodeTime = 0L
 
     private fun sendLocationUpdateToNode(latitude: Double, longitude: Double) {
+        val localNodeId = _myNodeId.value
+        if (localNodeId == 0) {
+            return
+        }
+
         val now = System.currentTimeMillis()
         if (now - lastGpsUpdateToNodeTime < 30000L) {
             // Rate limit: at most once every 30 seconds
@@ -712,12 +756,12 @@ class SovereignViewModel(
                     .setTime((System.currentTimeMillis() / 1000).toInt())
                     .build()
 
-                val packetId = secureRandom.nextInt()
+                val packetId = secureRandom.nextInt(1000000000)
                 val toRadio = MeshProtos.ToRadio.newBuilder()
                     .setPacket(
                         MeshProtos.MeshPacket.newBuilder()
                             .setId(packetId)
-                            .setFrom(_myNodeId.value)
+                            .setFrom(localNodeId)
                             .setTo(0xFFFFFFFF.toInt())
                             .setDecoded(
                                 MeshProtos.Data.newBuilder()

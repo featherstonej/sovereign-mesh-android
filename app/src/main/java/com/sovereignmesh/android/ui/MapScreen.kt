@@ -144,7 +144,7 @@ fun MapScreen(
             val geoPoint = GeoPoint(loc.first, loc.second)
             val marker = peerMarkers.getOrPut(nodeId) {
                 Marker(mapView).apply {
-                    val hexId = "0x" + Integer.toHexString(nodeId).uppercase()
+                    val hexId = "0x" + Integer.toHexString(nodeId).uppercase(Locale.US)
                     title = "Node: $hexId"
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     icon = android.graphics.drawable.GradientDrawable().apply {
