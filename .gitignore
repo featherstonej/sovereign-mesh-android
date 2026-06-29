@@ -34,4 +34,4 @@ google-services.json
 *.hprof
 .agents
 .antigravitycli
-CodeReviewResults.md
+CodeReviewResults*
