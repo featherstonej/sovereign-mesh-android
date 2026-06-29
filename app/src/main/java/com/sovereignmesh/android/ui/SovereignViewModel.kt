@@ -100,6 +100,10 @@ class SovereignViewModel(
     /** A map of channel IDs to their respective unread message counts. */
     val unreadCounts: StateFlow<Map<String, Int>> = _unreadCounts.asStateFlow()
 
+    private val _peerLocations = MutableStateFlow<Map<Int, Pair<Double, Double>>>(emptyMap())
+    /** Discovered peer locations indexed by their node IDs. */
+    val peerLocations: StateFlow<Map<Int, Pair<Double, Double>>> = _peerLocations.asStateFlow()
+
     private val _phoneLocation = MutableStateFlow<Pair<Double, Double>?>(null)
     /** Current GPS coordinates of the phone for tactical mapping. */
     val phoneLocation: StateFlow<Pair<Double, Double>?> = _phoneLocation.asStateFlow()
@@ -111,7 +115,10 @@ class SovereignViewModel(
     private var locationListener: android.location.LocationListener? = null
 
     private val secureRandom = SecureRandom()
-    private var myNodeId = 11223344 // Hardcoded mock node ID for current client until MY_INFO is received.
+    
+    private val _myNodeId = MutableStateFlow(0)
+    /** The local node's unique ID, dynamically updated upon connection. */
+    val myNodeId: StateFlow<Int> = _myNodeId.asStateFlow()
 
     // Local air-gapped TTS
     private val ttsEngine = MeshTtsEngine(context)
@@ -435,13 +442,14 @@ class SovereignViewModel(
             }
 
             // Encrypt using AES-CTR with the channel key (for local database caching only)
-            val encryptedBytes = MeshCryptoEngine.encrypt(textBytes, channel.psk, packetId, myNodeId)
+            val encryptedBytes = MeshCryptoEngine.encrypt(textBytes, channel.psk, packetId, _myNodeId.value)
             
             // Build the ToRadio protobuf wrapper containing the MeshPacket
             val toRadio = MeshProtos.ToRadio.newBuilder()
                 .setPacket(
                     MeshProtos.MeshPacket.newBuilder()
                         .setTo(0xFFFFFFFF.toInt()) // Broadcast
+                        .setFrom(_myNodeId.value)
                         .setChannel(channelIndex)
                         .setId(packetId)
                         .setDecoded(
@@ -463,7 +471,7 @@ class SovereignViewModel(
                 val msg = Message(
                     id = 0,
                     packetId = packetId,
-                    senderId = myNodeId,
+                    senderId = _myNodeId.value,
                     receiverId = 0, // Broadcast
                     timestamp = System.currentTimeMillis() / 1000,
                     payloadEncrypted = encryptedBytes,
@@ -506,8 +514,8 @@ class SovereignViewModel(
                     MeshProtos.FromRadio.PayloadVariantCase.MY_INFO -> {
                         val myNodeNum = fromRadio.myInfo.myNodeNum
                         if (myNodeNum != 0) {
-                            myNodeId = myNodeNum.toInt()
-                            Log.d(TAG, "Updated myNodeId dynamically to $myNodeId")
+                            _myNodeId.value = myNodeNum
+                            Log.d(TAG, "Updated local node ID to ${Integer.toHexString(myNodeNum)}")
                         }
                     }
                     MeshProtos.FromRadio.PayloadVariantCase.CHANNEL -> {
@@ -524,6 +532,20 @@ class SovereignViewModel(
                                 val decodedData = meshPacket.decoded
                                 if (decodedData.portnum == Portnums.PortNum.TEXT_MESSAGE_APP) {
                                     plainText = decodedData.payload.toStringUtf8()
+                                } else if (decodedData.portnum == Portnums.PortNum.POSITION_APP) {
+                                    try {
+                                        val position = MeshProtos.Position.parseFrom(decodedData.payload)
+                                        if (position.latitudeI != 0 && position.longitudeI != 0) {
+                                            val lat = position.latitudeI / 1e7
+                                            val lon = position.longitudeI / 1e7
+                                            val peerId = senderNodeId.toInt()
+                                            val current = _peerLocations.value.toMutableMap()
+                                            current[peerId] = Pair(lat, lon)
+                                            _peerLocations.value = current
+                                        }
+                                    } catch (e: Exception) {
+                                        // Ignore
+                                    }
                                 }
                             }
                             MeshProtos.MeshPacket.PayloadVariantCase.ENCRYPTED -> {
@@ -541,7 +563,33 @@ class SovereignViewModel(
                                     null
                                 }
                                 if (decrypted != null) {
-                                    plainText = String(decrypted, Charsets.UTF_8)
+                                    val data = try {
+                                        MeshProtos.Data.parseFrom(decrypted)
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                    if (data != null) {
+                                        if (data.portnum == Portnums.PortNum.TEXT_MESSAGE_APP) {
+                                            plainText = data.payload.toStringUtf8()
+                                        } else if (data.portnum == Portnums.PortNum.POSITION_APP) {
+                                            try {
+                                                val position = MeshProtos.Position.parseFrom(data.payload)
+                                                if (position.latitudeI != 0 && position.longitudeI != 0) {
+                                                    val lat = position.latitudeI / 1e7
+                                                    val lon = position.longitudeI / 1e7
+                                                    val peerId = senderNodeId.toInt()
+                                                    val current = _peerLocations.value.toMutableMap()
+                                                    current[peerId] = Pair(lat, lon)
+                                                    _peerLocations.value = current
+                                                }
+                                            } catch (e: Exception) {
+                                                // Ignore
+                                            }
+                                        }
+                                    } else {
+                                        // Fallback to legacy custom raw encrypted text
+                                        plainText = String(decrypted, Charsets.UTF_8)
+                                    }
                                 }
                             }
                             else -> {}
@@ -554,7 +602,7 @@ class SovereignViewModel(
                                 id = 0,
                                 packetId = packetId.toInt(),
                                 senderId = senderNodeId.toInt(),
-                                receiverId = myNodeId,
+                                receiverId = _myNodeId.value,
                                 timestamp = System.currentTimeMillis() / 1000,
                                 payloadEncrypted = meshPacket.toByteArray(),
                                 payloadDecrypted = plainText,
@@ -616,7 +664,7 @@ class SovereignViewModel(
                         id = 0,
                         packetId = mockPacketId,
                         senderId = mockSenderNodeId,
-                        receiverId = myNodeId,
+                        receiverId = _myNodeId.value,
                         timestamp = System.currentTimeMillis() / 1000,
                         payloadEncrypted = packetBytes,
                         payloadDecrypted = plainText ?: "[Decryption Failed / Corrupted Bytes]",
@@ -644,6 +692,49 @@ class SovereignViewModel(
         }
     }
 
+    private var lastGpsUpdateToNodeTime = 0L
+
+    private fun sendLocationUpdateToNode(latitude: Double, longitude: Double) {
+        val now = System.currentTimeMillis()
+        if (now - lastGpsUpdateToNodeTime < 30000L) {
+            // Rate limit: at most once every 30 seconds
+            return
+        }
+
+        val serviceRef = _service.value ?: return
+        lastGpsUpdateToNodeTime = now
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val position = MeshProtos.Position.newBuilder()
+                    .setLatitudeI((latitude * 1e7).toInt())
+                    .setLongitudeI((longitude * 1e7).toInt())
+                    .setTime((System.currentTimeMillis() / 1000).toInt())
+                    .build()
+
+                val packetId = secureRandom.nextInt()
+                val toRadio = MeshProtos.ToRadio.newBuilder()
+                    .setPacket(
+                        MeshProtos.MeshPacket.newBuilder()
+                            .setId(packetId)
+                            .setFrom(_myNodeId.value)
+                            .setTo(0xFFFFFFFF.toInt())
+                            .setDecoded(
+                                MeshProtos.Data.newBuilder()
+                                    .setPortnum(Portnums.PortNum.POSITION_APP)
+                                    .setPayload(position.toByteString())
+                            )
+                    )
+                    .build()
+
+                val packetBytes = toRadio.toByteArray()
+                serviceRef.sendPacket(packetBytes)
+            } catch (e: Exception) {
+                // Fail silently on serialization/transmitting issues
+            }
+        }
+    }
+
     /**
      * Toggles the use of the phone's internal GPS for location reporting.
      */
@@ -656,6 +747,7 @@ class SovereignViewModel(
             val listener = object : android.location.LocationListener {
                 override fun onLocationChanged(location: android.location.Location) {
                     _phoneLocation.value = Pair(location.latitude, location.longitude)
+                    sendLocationUpdateToNode(location.latitude, location.longitude)
                 }
                 override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
@@ -686,6 +778,7 @@ class SovereignViewModel(
                     ?: locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
                 if (lastKnown != null) {
                     _phoneLocation.value = Pair(lastKnown.latitude, lastKnown.longitude)
+                    sendLocationUpdateToNode(lastKnown.latitude, lastKnown.longitude)
                 }
             } catch (e: SecurityException) {
                 Log.e(TAG, "Location permissions missing or denied: ${e.message}")

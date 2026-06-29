@@ -65,131 +65,100 @@ fun MapScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val messages by viewModel.messages.collectAsState()
     val phoneLocation by viewModel.phoneLocation.collectAsState()
     val usePhoneGps by viewModel.usePhoneGps.collectAsState()
-    val peerNodeId = 87654321
-    var signalLog by remember { mutableStateOf<SignalLog?>(null) }
+    val peerLocations by viewModel.peerLocations.collectAsState()
+    
     var hasCentered by remember { mutableStateOf(false) }
     
-    // Initialize OSMDroid configuration for offline-only tile directory
-    remember {
+    // Initialize OSMDroid configuration for offline-only operation
+    LaunchedEffect(Unit) {
         val sharedPrefs = context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
         Configuration.getInstance().load(context, sharedPrefs)
-        // User agent required by OSMDroid, set to a generic local name
         Configuration.getInstance().userAgentValue = "SovereignMeshOffline"
     }
 
     val mapView = remember {
-        MapView(context)
-    }
+        MapView(context).apply {
+            // CRITICAL: Block map from attempting internet downloads to enforce offline privacy
+            setUseDataConnection(false)
+            setMultiTouchControls(true)
+            zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT)
+            controller.setZoom(15.0)
 
-    val peerMarker = remember {
-        Marker(mapView).apply {
-            position = GeoPoint(37.7715, -122.4810)
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            // Default center for local grid if no GPS is active
+            controller.setCenter(GeoPoint(0.0, 0.0))
         }
     }
 
     val myMarker = remember {
         Marker(mapView).apply {
-            position = GeoPoint(37.7694, -122.4862)
-            title = "Node: Me (0x11223344)"
+            title = "My Node"
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-            val myShape = android.graphics.drawable.GradientDrawable().apply {
+            icon = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setSize(40, 40)
                 setColor(android.graphics.Color.BLUE)
                 setStroke(2, android.graphics.Color.WHITE)
             }
-            icon = myShape
         }
     }
 
-    remember {
-        mapView.apply {
-            // CRITICAL: Block map from attempting internet downloads to enforce offline privacy
-            setUseDataConnection(false)
-            
-            // Basic UI setups
-            setMultiTouchControls(true)
-            zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT)
-            controller.setZoom(15.0)
+    val peerMarkers = remember { mutableMapOf<Int, Marker>() }
 
-            // Central mock coordinates for local mesh coordinate grid (e.g. SF Golden Gate Park area)
-            val centerPoint = GeoPoint(37.7694, -122.4862)
-            controller.setCenter(centerPoint)
-
-            overlays.add(myMarker)
-            overlays.add(peerMarker)
-        }
-    }
-
-    // Query signal log reactively when message logs are updated
-    LaunchedEffect(messages) {
-        withContext(Dispatchers.IO) {
-            signalLog = viewModel.getLatestSignalLog(peerNodeId)
-        }
-    }
-
-    // Update peer marker based on the latest signal health log
-    LaunchedEffect(signalLog) {
-        val log = signalLog
-        if (log != null) {
-            peerMarker.title = "Node: Peer (0x87654321)"
-            peerMarker.snippet = "RSSI: ${log.rssi} dBm, SNR: ${String.format(Locale.US, "%.1f", log.snr)} dB"
-            
-            // Dynamic color coding: green = strong, yellow = medium, red = weak
-            val markerColor = when {
-                log.rssi >= -60 -> android.graphics.Color.GREEN
-                log.rssi >= -75 -> android.graphics.Color.YELLOW
-                else -> android.graphics.Color.RED
-            }
-            
-            val shapeDrawable = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setSize(48, 48)
-                setColor(markerColor)
-                setStroke(2, android.graphics.Color.WHITE)
-            }
-            peerMarker.icon = shapeDrawable
-        } else {
-            peerMarker.title = "Node: Peer (0x87654321)"
-            peerMarker.snippet = "No Signal Data"
-            val shapeDrawable = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setSize(48, 48)
-                setColor(android.graphics.Color.GRAY)
-                setStroke(2, android.graphics.Color.WHITE)
-            }
-            peerMarker.icon = shapeDrawable
-        }
-        mapView.invalidate()
-    }
-
-    // Reset coordinates and camera when toggle is turned off
-    LaunchedEffect(usePhoneGps) {
-        if (!usePhoneGps) {
-            hasCentered = false
-            val defaultCenter = GeoPoint(37.7694, -122.4862)
-            myMarker.position = defaultCenter
-            mapView.controller.setCenter(defaultCenter)
-            mapView.invalidate()
-        }
-    }
-
-    // Update marker position and center map only once when location is first acquired
-    LaunchedEffect(phoneLocation) {
+    // Update Local Node Marker
+    LaunchedEffect(phoneLocation, usePhoneGps) {
         val loc = phoneLocation
         if (usePhoneGps && loc != null) {
             val geoPoint = GeoPoint(loc.first, loc.second)
             myMarker.position = geoPoint
+            if (!mapView.overlays.contains(myMarker)) {
+                mapView.overlays.add(myMarker)
+            }
             if (!hasCentered) {
                 mapView.controller.setCenter(geoPoint)
                 hasCentered = true
             }
-            mapView.invalidate()
+        } else {
+            mapView.overlays.remove(myMarker)
+            hasCentered = false
         }
+        mapView.invalidate()
+    }
+
+    // Dynamically update peer markers from mesh location broadcasts
+    LaunchedEffect(peerLocations) {
+        // Remove markers for nodes no longer in the locations map
+        val currentNodes = peerLocations.keys
+        val iterator = peerMarkers.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.key !in currentNodes) {
+                mapView.overlays.remove(entry.value)
+                iterator.remove()
+            }
+        }
+
+        // Update or add markers for active peer locations
+        for ((nodeId, loc) in peerLocations) {
+            val geoPoint = GeoPoint(loc.first, loc.second)
+            val marker = peerMarkers.getOrPut(nodeId) {
+                Marker(mapView).apply {
+                    val hexId = "0x" + Integer.toHexString(nodeId).uppercase()
+                    title = "Node: $hexId"
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    icon = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setSize(48, 48)
+                        setColor(android.graphics.Color.RED)
+                        setStroke(2, android.graphics.Color.WHITE)
+                    }
+                    mapView.overlays.add(this)
+                }
+            }
+            marker.position = geoPoint
+        }
+        mapView.invalidate()
     }
 
     DisposableEffect(mapView) {
@@ -241,29 +210,12 @@ fun MapScreen(
                     fontFamily = FontFamily.Monospace
                 )
                 
-                val currentLog = signalLog
-                if (currentLog != null) {
-                    Text(
-                        text = "PEER RSSI: ${currentLog.rssi} dBm",
-                        fontSize = 10.sp,
-                        color = if (currentLog.rssi >= -75) CryptoGreen else Color.Red,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        text = "PEER SNR: ${String.format(Locale.US, "%.1f", currentLog.snr)} dB",
-                        fontSize = 10.sp,
-                        color = Color.White,
-                        fontFamily = FontFamily.Monospace
-                    )
-                } else {
-                    Text(
-                        text = "PEER RSSI: N/A (Offline)",
-                        fontSize = 10.sp,
-                        color = TextMuted,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
+                Text(
+                    text = "ACTIVE PEERS: ${peerLocations.size}",
+                    fontSize = 10.sp,
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
