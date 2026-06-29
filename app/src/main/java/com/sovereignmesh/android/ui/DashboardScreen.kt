@@ -68,6 +68,7 @@ fun DashboardScreen(
     val channels by viewModel.channels.collectAsState()
     val activeChannel by viewModel.activeChannel.collectAsState()
     val unreadCounts by viewModel.unreadCounts.collectAsState()
+    val myNodeId by viewModel.myNodeId.collectAsState()
 
     var showAddChannelDialog by remember { mutableStateOf(false) }
     var textMessage by remember { mutableStateOf("") }
@@ -171,7 +172,7 @@ fun DashboardScreen(
                 items(messages) { msg ->
                     MessageItem(
                         message = msg,
-                        myNodeId = 11223344,
+                        myNodeId = myNodeId,
                         onSpeakClick = { viewModel.speak(msg.payloadDecrypted ?: "") },
                         onStegoBackupClick = {
                             val filePath = viewModel.saveStegoBackup(msg.payloadDecrypted ?: "")
