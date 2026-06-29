@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Hexagon Nodes -->
+    <path android:fillColor="#00E676" android:pathData="M54,25 A4,4 0 1,1 54,33 A4,4 0 1,1 54,25" />
+    <path android:fillColor="#00E676" android:pathData="M79,40 A4,4 0 1,1 79,48 A4,4 0 1,1 79,40" />
+    <path android:fillColor="#00E676" android:pathData="M79,70 A4,4 0 1,1 79,78 A4,4 0 1,1 79,70" />
+    <path android:fillColor="#00E676" android:pathData="M54,85 A4,4 0 1,1 54,93 A4,4 0 1,1 54,85" />
+    <path android:fillColor="#00E676" android:pathData="M29,70 A4,4 0 1,1 29,78 A4,4 0 1,1 29,70" />
+    <path android:fillColor="#00E676" android:pathData="M29,40 A4,4 0 1,1 29,48 A4,4 0 1,1 29,40" />
+    <!-- Center Node -->
+    <path android:fillColor="#26A69A" android:pathData="M54,55 A5,5 0 1,1 54,65 A5,5 0 1,1 54,55" />
+    <!-- Connections -->
+    <path
+        android:strokeColor="#26A69A"
+        android:strokeWidth="2"
+        android:pathData="M54,33 L54,55 M79,48 L54,60 M79,70 L54,60 M54,85 L54,65 M29,70 L54,60 M29,48 L54,60" />
+    <path
+        android:strokeColor="#00E676"
+        android:strokeWidth="1.5"
+        android:pathData="M54,29 L79,44 L79,74 L54,89 L29,74 L29,44 Z" />
+</vector>

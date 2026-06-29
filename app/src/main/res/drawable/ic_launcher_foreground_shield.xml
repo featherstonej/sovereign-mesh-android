@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shield Outline -->
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M54,20 L30,30 L30,55 C30,72 40,88 54,95 C68,88 78,72 78,55 L78,30 L54,20 Z" />
+    <!-- Mesh Nodes inside shield -->
+    <path
+        android:fillColor="#121212"
+        android:pathData="M54,40 L45,50 L54,60 L63,50 Z" />
+    <path
+        android:fillColor="#121212"
+        android:pathData="M54,65 L45,75 L54,85 L63,75 Z" />
+    <path
+        android:fillColor="#121212"
+        android:pathData="M40,55 L35,60 L40,65 L45,60 Z" />
+    <path
+        android:fillColor="#121212"
+        android:pathData="M68,55 L63,60 L68,65 L73,60 Z" />
+    <!-- Connecting lines -->
+    <path
+        android:strokeColor="#121212"
+        android:strokeWidth="1.5"
+        android:pathData="M54,50 L54,65 M45,50 L40,55 M63,50 L68,55 M40,65 L45,75 M68,65 L63,75" />
+</vector>

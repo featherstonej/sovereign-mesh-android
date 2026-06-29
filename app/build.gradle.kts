@@ -24,11 +24,11 @@ plugins {
 }
 
 android {
-    namespace = "com.sovereignmesh.android"
+    namespace = "org.k9hkrstudios.sovereignmesh.android"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.sovereignmesh.android"
+        applicationId = "org.k9hkrstudios.sovereignmesh.android"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

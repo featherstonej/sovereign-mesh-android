@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Antenna Tower -->
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M54,30 L65,75 L43,75 Z" />
+    <!-- Signal Waves (Hexagonal style) -->
+    <path
+        android:strokeColor="#00E676"
+        android:strokeWidth="3"
+        android:pathData="M40,45 L35,54 L40,63 M68,45 L73,54 L68,63" />
+    <path
+        android:strokeColor="#00E676"
+        android:strokeWidth="3"
+        android:pathData="M30,35 L20,54 L30,73 M78,35 L88,54 L78,73" />
+    <!-- Padlock at base -->
+    <path
+        android:fillColor="#26A69A"
+        android:pathData="M49,65 L59,65 L59,75 L49,75 Z M51,65 L51,62 C51,60 52,59 54,59 C56,59 57,60 57,62 L57,65"
+        android:strokeColor="#121212"
+        android:strokeWidth="1" />
+</vector>
